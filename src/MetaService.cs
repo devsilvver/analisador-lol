@@ -230,7 +230,20 @@ public sealed partial class MetaService : IDisposable
             return list;
         });
 
-    public Task<ChampionBuild?> GetBuildAsync(int championId, string position, string region, string tier) =>
+    /// <summary>
+    /// Build de um campeão na rota. O resumo (vitórias, escolha, tier) vem da tier list quando ela tem amostra maior:
+    /// assim a sugestão, a prévia da build e a tier list mostram o mesmo número.
+    /// </summary>
+    public async Task<ChampionBuild?> GetBuildAsync(int championId, string position, string region, string tier)
+    {
+        var b = await GetBuildRawAsync(championId, position, region, tier);
+        if (b == null) return null;
+        var t = (await GetTierListAsync(region, tier))?.FirstOrDefault(e => e.ChampionId == championId && e.Position == position);
+        return t == null || t.Play <= b.Play ? b
+            : b with { WinRate = t.WinRate, PickRate = t.PickRate, BanRate = t.BanRate, Tier = t.Tier, Rank = t.Rank, Play = t.Play };
+    }
+
+    Task<ChampionBuild?> GetBuildRawAsync(int championId, string position, string region, string tier) =>
         Cached($"build_{region}_{tier}_{championId}_{position}", $"{OpGg}/{region}/champions/ranked/{championId}/{Pos.Url(position)}?tier={tier}", node =>
         {
             var d = node["data"]!;

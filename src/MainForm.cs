@@ -35,7 +35,14 @@ public sealed class MainForm : Form
         BackColor = Color.FromArgb(9, 12, 18);
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         Controls.Add(web);
-        if (Program.StartHidden) WindowState = FormWindowState.Minimized;
+        if (Program.Demo)
+        {
+            // Cópia de testes: fica fora da área visível, sem barra de tarefas, para não atrapalhar quem está usando o PC.
+            StartPosition = FormStartPosition.Manual;
+            Location = new Point(-5000, 0);
+            ShowInTaskbar = false;
+        }
+        else if (Program.StartHidden) WindowState = FormWindowState.Minimized;
 
         engine = new Engine(meta, SettingsStore.Load());
         staticLoad = meta.LoadStaticAsync();
@@ -266,6 +273,7 @@ public sealed class MainForm : Form
     /// <summary>Inicia junto com o Windows, já escondido na bandeja (opção nas configurações).</summary>
     void ApplyStartup()
     {
+        if (Program.Demo) return; // a cópia de testes não mexe no início com o Windows
         try
         {
             using var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
@@ -365,6 +373,8 @@ public sealed class MainForm : Form
     }
 
     // O X da janela só esconde: o app continua na bandeja, pronto para o atalho.
+    protected override bool ShowWithoutActivation => Program.Demo;
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (!exiting && e.CloseReason == CloseReason.UserClosing)

@@ -440,3 +440,56 @@ h3 { margin: 10px 0 6px; font-size: 12px; }
 .maug img { width: 20px; height: 20px; border-radius: 5px; background: var(--panel2); }
 .game-grid.arena .sits { grid-template-columns: 1fr; }
 .credits { font-size: 13px; } .credits a { color: var(--ally); }
+
+/* =================================================================== SELEÇÃO v2 (informação distribuída pela janela) */
+.cs-grid { grid-template-columns: 250px minmax(0, 1fr) minmax(360px, 400px); }
+.cs-grid.modes { grid-template-columns: 250px minmax(0, 1fr) minmax(360px, 400px); }
+.cs-grid > .col { overflow: hidden; }
+/* times: os dois cartões dividem a altura e os jogadores se espalham */
+.col.teams > .team-card { flex: 1 1 0; min-height: 0; margin-bottom: 8px; }
+.col.teams > .team-card:last-child { margin-bottom: 0; }
+.team-card .slots { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-around; min-height: 0; }
+.slot .ph { width: 40px; height: 40px; }
+/* sugestões: linhas que preenchem a altura, números em colunas */
+.sug-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; margin-right: -6px; padding-right: 6px; }
+.sug2 { flex: 1 0 auto; max-height: 78px; min-height: 48px; grid-template-columns: 20px 40px minmax(0, 1fr) auto auto; gap: 10px; padding: 4px 8px; border: 1px solid transparent; }
+.sug2 + .sug2 { border-top-color: var(--line); border-radius: 0; }
+.sug2:hover, .sug2.sel { border-radius: 8px; }
+.sug2.sel { outline: 0; border-color: #6b5426; background: #1b170e; }
+.sug2.sel + .sug2 { border-top-color: transparent; }
+.sug2.mine .l1 b { color: var(--gold2); }
+.sug2 .l1 { font-size: 13.5px; }
+.sug2 .l2 { white-space: normal; max-height: 40px; overflow: hidden; margin-top: 2px; }
+.sug2 .nums { display: flex; gap: 2px; }
+.sug2 .sc { min-width: 72px; text-align: center; padding: 3px 4px; border-radius: 7px; }
+.sug2 .sc + .sc { border-left: 1px solid var(--line); border-radius: 0; }
+.sug2 .sc b { font-size: 15px; }
+.sug2 .sc span { white-space: nowrap; }
+/* bans e counters em linha, ocupando a largura */
+.counters.wide { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; }
+.counters.wide .counter { width: auto; font-size: 11.5px; }
+/* coluna da build */
+.build-card h2 { margin-bottom: 6px; }
+.build-card.mine { border-color: #4b3c1d; }
+.build-card .scroll { overflow-x: hidden; }
+.build-card .bc-head { padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.bc-sec { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.build-card .bc-row { padding: 5px 0; }
+.build-card .bc-row .lbl { width: 58px; }
+.mus { display: flex; gap: 6px; flex-wrap: nowrap; }
+.mu { display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 10.5px; font-weight: 600; width: 38px; }
+.mu.click:hover img { outline: 1px solid var(--gold); }
+.col.side-col > .build-card { flex: 0 1 auto; }
+.col.side-col > .card:last-child { margin-bottom: 0; }
+/* times: crescem para ocupar a altura, mas nunca encolhem abaixo do conteúdo (a coluna rola se faltar espaço) */
+.cs-grid > .col.teams { overflow-y: auto; }
+.col.teams > .team-card { flex: 1 0 auto; }
+.counters.wide { grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); }
+/* janelas menores: colunas laterais mais estreitas e sem a coluna "escolha" */
+@media (max-width: 1250px) {
+  .cs-grid, .cs-grid.modes { grid-template-columns: 215px minmax(0, 1fr) 300px; }
+  .sug2 .nums .sc:last-child { display: none; }
+  .sug2 .sc { min-width: 62px; }
+  .slot .pos { width: 30px; }
+}
+.build-card .bc-row { flex-wrap: wrap; row-gap: 4px; }

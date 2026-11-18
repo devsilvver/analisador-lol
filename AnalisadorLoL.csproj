@@ -8,7 +8,7 @@
     <AssemblyName>AnalisadorLoL</AssemblyName>
     <RootNamespace>AnalisadorLoL</RootNamespace>
     <Product>Analisador LoL</Product>
-    <Version>1.0.1</Version>
+    <Version>1.1.0</Version>
     <Authors>Guilherme Silvestrini</Authors>
     <Company>Guilherme Silvestrini</Company>
     <Copyright>© 2026 Guilherme Silvestrini</Copyright>

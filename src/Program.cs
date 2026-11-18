@@ -4,7 +4,10 @@ namespace AnalisadorLoL;
 
 static class Program
 {
-    public const string ShowEventName = "AnalisadorLoL_mostrar";
+    /// <summary>Cópia de testes (variável ANALISADOR_DEMO): roda ao lado do app normal, sem disputar a instância única.</summary>
+    public static readonly bool Demo = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANALISADOR_DEMO"));
+    static readonly string Suffix = Demo ? "_demo" : "";
+    public static readonly string ShowEventName = "AnalisadorLoL_mostrar" + Suffix;
     /// <summary>Iniciado pelo Windows ou reiniciado sozinho: começa escondido na bandeja.</summary>
     public static bool StartHidden { get; private set; }
     static readonly DateTime Started = DateTime.Now;
@@ -16,7 +19,7 @@ static class Program
         StartHidden = args.Contains("--bandeja");
         var restarted = args.Contains("--reiniciado");
 
-        var mutex = new Mutex(false, "AnalisadorLoL_instancia_unica");
+        var mutex = new Mutex(false, "AnalisadorLoL_instancia_unica" + Suffix);
         bool owned;
         // Reinício automático: espera a cópia antiga terminar de fechar.
         try { owned = mutex.WaitOne(restarted ? 15000 : 0); }
@@ -46,7 +49,7 @@ static class Program
     /// <summary>Abre uma cópia nova escondida na bandeja (a atual está para fechar).</summary>
     public static void Relaunch(string reason)
     {
-        if (Interlocked.Exchange(ref relaunching, 1) == 1) return;
+        if (Demo || Interlocked.Exchange(ref relaunching, 1) == 1) return;
         // Evita ciclo de reinícios: se caiu logo depois de abrir, não insiste.
         if (DateTime.Now - Started < TimeSpan.FromMinutes(1)) { Log.Write($"Não reaberto ({reason}): caiu menos de 1 minuto após abrir."); return; }
         try

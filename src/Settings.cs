@@ -26,7 +26,7 @@ public static class Paths
     public static readonly string Roaming = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AnalisadorLoL");
     public static readonly string Local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AnalisadorLoL");
     public static readonly string Cache = Path.Combine(Local, "cache");
-    public static readonly string WebView = Path.Combine(Local, "WebView2");
+    public static readonly string WebView = Path.Combine(Local, Program.Demo ? "WebView2-demo" : "WebView2");
 }
 
 public static class Json

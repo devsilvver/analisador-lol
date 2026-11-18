@@ -208,9 +208,14 @@ public class BuildStep
     public string Status { get; set; } = "falta"; // "comprado" | "em-progresso" | "falta"
 }
 
+/// <summary>Itens exatos que foram para o conjunto da loja do jogo (a partida mostra os mesmos).</summary>
+public record ShopItems(int[] Core, int[] Boots, int[] Late, int[] Situational);
+
 public class SituationalItem
 {
     public int ItemId { get; set; }
+    /// <summary>O item também está no conjunto "AL" da loja do jogo.</summary>
+    public bool InShop { get; set; }
     public string Reason { get; set; } = "";
     public bool Popular { get; set; }
 }
@@ -252,8 +257,6 @@ public class GameView
     public List<PlayerView> Enemies { get; set; } = [];
     public ChampionBuild? Build { get; set; }
     public List<BuildStep> CorePath { get; set; } = [];
-    public List<BuildStep>? AltCorePath { get; set; }
-    public double AltCoreWinRate { get; set; }
     public BuildStep? Boots { get; set; }
     public List<BuildStep> LateOptions { get; set; } = [];
     public int? NextItem { get; set; }

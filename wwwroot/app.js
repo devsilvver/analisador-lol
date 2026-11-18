@@ -206,7 +206,7 @@ document.getElementById('nav').addEventListener('click', (e) => {
 function autoTab() {
   const live = !!(S.state?.champSelect || S.state?.game);
   if (live && !S.wasLive) { S.wasLive = true; if (S.page !== 'live') go('live'); }
-  else if (!live && S.wasLive) { S.wasLive = false; if (S.page === 'live') go('profile'); }
+  else if (!live && S.wasLive) { S.wasLive = false; S.csPrev = null; if (S.page === 'live') go('profile'); }
 }
 
 function go(page) {
@@ -353,23 +353,26 @@ function slotHtml(s, opp, enemy) {
   const click = s.championId ? ` data-act="champ" data-c="${s.championId}" data-p="${s.position ?? ''}" title="Ver runas e build"` : '';
   return `<div class="slot ${cls}"${click}${partyAttr(s.party, enemy)}>
     ${noLanes ? '' : `<div class="pos">${pos}</div>`}
-    ${s.championId ? champImg(s.championId, 'c34') : '<div class="ph"></div>'}
+    ${s.championId ? champImg(s.championId) : '<div class="ph"></div>'}
     <div class="grow"><div class="nm">${s.championId ? esc(cname(s.championId)) : '<span class="muted">Escolhendo…</span>'}${s.isMe ? '<span class="tag me">você</span>' : ''}${partyTag(s.party, enemy)}</div>
       <div class="small muted one">${[s.name ? esc(s.name) : '', rankText(s.rank, true)].filter(Boolean).join(' · ')}</div></div></div>`;
 }
 
-/** Sugestão em uma linha só (ícone, nome, motivos e o número principal). */
+/** Sugestão: campeão e motivos à esquerda, números em colunas à direita (ocupa a largura toda). */
 function sugRow(s, i, opts) {
   const reasons = s.reasons.map((r) => `<span class="chip ${/Desvantagem|Fraco|Sem estat/.test(r) ? 'r' : /domina/.test(r) ? 'y' : 'g'}">${esc(r)}</span>`).join('') || '<span class="muted small">Escolha estável no meta</span>';
-  const main = opts.arena && s.avgPlace
-    ? `<b>${s.avgPlace.toFixed(1).replace('.', ',')}º</b><span>posição média</span>`
-    : `<b class="${wrCls(s.matchupWinRate ?? s.winRate)}">${pct(s.matchupWinRate ?? s.winRate)}</b><span>${s.matchupWinRate != null && opts.oppName ? 'vs ' + esc(opts.oppName) : 'vitórias'}</span>`;
-  return `<div class="sug2 ${opts.sel === s.championId || s.source === 'seu' ? 'sel' : ''}" data-act="champ" data-c="${s.championId}" data-p="${opts.pos}" data-m="${opts.mode}">
-    <span class="n">${i + 1}</span>${champImg(s.championId, 'c34')}
+  const col = (v, label, cls = '') => `<div class="sc"><b class="${cls}">${v}</b><span>${label}</span></div>`;
+  const cols = opts.arena
+    ? col(s.avgPlace ? s.avgPlace.toFixed(1).replace('.', ',') + 'º' : '—', 'posição média') + col(pct(s.winRate, 0), 'top 4', wrCls(s.winRate)) + col(pct(s.pickRate), 'escolha')
+    : col(pct(s.winRate), 'vitórias', wrCls(s.winRate))
+      + (opts.oppName ? col(s.matchupWinRate != null ? pct(s.matchupWinRate) : '—', 'vs ' + esc(opts.oppName), s.matchupWinRate != null ? wrCls(s.matchupWinRate) : 'muted') : '')
+      + col(pct(s.pickRate), 'escolha');
+  return `<div class="sug2 ${opts.preview === s.championId ? 'sel' : ''} ${s.source === 'seu' ? 'mine' : ''}" data-act="preview" data-c="${s.championId}" title="Ver a build ao lado">
+    <span class="n">${i + 1}</span>${champImg(s.championId)}
     <div class="grow"><div class="l1"><b>${esc(cname(s.championId))}</b> ${tierBadge(s.tier)}
       ${s.source === 'seu' ? '<span class="tag me">seu</span>' : s.source === 'banco' ? '<span class="tag">banco</span>' : ''}${!s.owned && !opts.random ? '<span class="tag">não tem</span>' : ''}</div>
       <div class="l2">${reasons}</div></div>
-    <div class="sc">${main}</div>
+    <div class="nums">${cols}</div>
     ${s.source === 'banco' ? `<button class="btn pri sm" data-act="bench" data-c="${s.championId}">Pegar</button>` : ''}
   </div>`;
 }
@@ -385,12 +388,48 @@ function csHead(cs, extra) {
   </div>`;
 }
 
+/** Campeão da coluna da build: o que você clicou na lista; senão o seu; senão a 1ª sugestão. */
+function csPreviewChamp(cs) {
+  if (S.csPrev && S.csPrev.mine !== cs.myChampionId) S.csPrev = null; // você trocou de campeão: volta para o seu
+  return S.csPrev?.c ?? (cs.myChampionId || cs.suggestions[0]?.championId || 0);
+}
+
+/** Coluna da build na seleção (sempre preenchida: seu campeão ou a prévia de uma sugestão). */
+function csBuild(cs, pos, mode) {
+  const champ = csPreviewChamp(cs);
+  if (!champ) return '<div class="card grow-card"><div class="muted">A build aparece assim que houver sugestões ou o seu campeão for escolhido.</div></div>';
+  const mine = champ === cs.myChampionId;
+  const key = buildKey(champ, pos, mode);
+  const b = mine && cs.myBuild ? cs.myBuild : S.builds[key];
+  const idx = cs.suggestions.findIndex((x) => x.championId === champ);
+  const title = mine ? (cs.myLocked ? 'Seu campeão' : 'Seu campeão <span class="nocaps muted">(ainda não confirmado)</span>')
+    : `Prévia${idx >= 0 ? ` <span class="nocaps muted">· sugestão nº ${idx + 1}</span>` : ''}`;
+  const back = !mine && cs.myChampionId ? `<button class="btn sm" data-act="preview" data-c="0" style="margin-left:auto">Voltar ao seu</button>` : '';
+  let body;
+  if (b) body = buildCompact(b, { spells: mode !== 'arena', opp: cs.laneOpponent?.championId });
+  else if (b === false) body = `<div class="muted">Sem estatísticas de ${esc(cname(champ))} para esta rota.</div>`;
+  else {
+    if (!S.loading[key]) getBuild(champ, pos, mode).then((r) => { if (!r) S.builds[key] = false; if (S.page === 'live') renderPage(); });
+    body = `<div class="muted">Carregando a build de ${esc(cname(champ))}…</div>`;
+  }
+  return `<div class="card grow-card build-card ${mine ? 'mine' : ''}"><h2>${title}${back}</h2><div class="scroll">${body}</div></div>`;
+}
+
+function bansCard(cs, myPos) {
+  if (!cs.banSuggestions.length) return '';
+  return `<div class="card ${cs.myTurnToBan ? 'hl' : ''}"><h2>Sugestões de ban ${cs.myTurnToBan ? '<span class="gold nocaps">— sua vez</span>' : ''}</h2>
+    <div class="counters wide">${cs.banSuggestions.map((b) => `<div class="counter click" data-act="champ" data-c="${b.championId}" data-p="${myPos}" title="${esc(b.reasons.join('\n'))}">${champImg(b.championId, 'c34')}<span>${esc(cname(b.championId))}</span>
+      <span class="small ${b.matchupWinRate != null ? 'bad' : 'muted'}">${b.matchupWinRate != null ? 'você ' + pct(b.matchupWinRate, 0) : pct(b.winRate, 0)}</span></div>`).join('')}</div></div>`;
+}
+
 function renderModeSelect(cs) {
   const mode = cs.mode;
   const random = mode === 'aram' || mode === 'mayhem';
   const mates = mode === 'arena' ? cs.allies.filter((a) => !a.isMe && a.championId) : [];
   const title = random ? 'Seu campeão e o banco' : mates.length ? `Melhores com ${esc(mates.map((m) => cname(m.championId)).join(' e '))}` : `Melhores no ${esc(MODE_NAME[mode])}`;
-  const sugs = cs.suggestions.slice(0, random ? 6 : 12).map((s, i) => sugRow(s, i, { arena: mode === 'arena', random, pos: mode.toUpperCase(), mode, sel: cs.myChampionId })).join('');
+  const pos = mode.toUpperCase();
+  const preview = csPreviewChamp(cs);
+  const sugs = cs.suggestions.slice(0, random ? 8 : 12).map((s, i) => sugRow(s, i, { arena: mode === 'arena', random, pos, mode, preview })).join('');
   return `<div class="fit">
   ${csHead(cs, {
     sub: random && cs.rerollsRemaining ? `<div class="sub">${cs.rerollsRemaining} rerrolagem(ns) disponível(is)</div>` : '',
@@ -398,48 +437,51 @@ function renderModeSelect(cs) {
     runes: mode !== 'arena',
   })}
   ${cs.notice ? `<div class="banner slim">${esc(cs.notice)}</div>` : ''}
-  <div class="cs-grid modes">
-    <div class="col"><div class="card team-card t-ally"><h2><span class="ally">${mode === 'arena' ? arenaTxt(cs.allies.length, 0).mine : 'Seu time'}</span></h2>${cs.allies.map((s) => slotHtml(s, false, false)).join('')}${dmgBar(cs.allyDamage, 'Dano')}</div>
-      ${cs.enemies.some((e) => e.championId) ? `<div class="card team-card t-enemy"><h2><span class="enemy">Inimigo</span></h2>${cs.enemies.map((s) => slotHtml(s, false, true)).join('')}</div>` : ''}</div>
-    <div class="col"><div class="card grow-card ${cs.myTurnToPick ? 'hl' : ''}"><h2>${title}</h2><div class="scroll">${sugs || '<div class="muted">Sem sugestões ainda.</div>'}</div></div></div>
-    <div class="col">${cs.myBuild ? `<div class="card grow-card">${buildCompact(cs.myBuild, { spells: mode !== 'arena' })}</div>` : '<div class="card muted">A build aparece quando o seu campeão estiver definido.</div>'}</div>
+  <div class="cs-grid">
+    <div class="col teams">
+      <div class="card team-card grow-card t-ally"><h2><span class="ally">${mode === 'arena' ? arenaTxt(cs.allies.length, 0).mine : 'Seu time'}</span></h2><div class="slots">${cs.allies.map((s) => slotHtml(s, false, false)).join('')}</div>${dmgBar(cs.allyDamage, '')}</div>
+      ${cs.enemies.some((e) => e.championId) ? `<div class="card team-card grow-card t-enemy"><h2><span class="enemy">Inimigo</span></h2><div class="slots">${cs.enemies.map((s) => slotHtml(s, false, true)).join('')}</div></div>` : ''}</div>
+    <div class="col"><div class="card grow-card ${cs.myTurnToPick ? 'hl' : ''}"><h2>${title}<span class="nocaps muted small" style="margin-left:auto">clique para ver a build</span></h2><div class="sug-list">${sugs || '<div class="muted">Sem sugestões ainda.</div>'}</div></div></div>
+    <div class="col">${csBuild(cs, pos, mode)}</div>
   </div></div>`;
 }
 
 function renderChampSelect(cs) {
   if (cs.mode && cs.mode !== 'classic') return renderModeSelect(cs);
   const opp = cs.laneOpponent;
+  const oppName = opp ? cname(opp.championId) : '';
   const posButtons = POS.map((p) => `<button class="${cs.myPosition === p ? 'on' : ''}" data-act="pos" data-v="${p}">${POS_NAME[p]}</button>`).join('');
   const myPos = cs.myPosition ?? '';
-  const sugs = cs.suggestions.slice(0, 10).map((s, i) => sugRow(s, i, { pos: myPos, mode: 'classic', sel: cs.myChampionId, oppName: opp ? cname(opp.championId) : '' })).join('');
-  const bans = cs.banSuggestions.length ? `<div class="card ${cs.myTurnToBan ? 'hl' : ''}"><h2>Bans ${cs.myTurnToBan ? '— sua vez' : ''}</h2>
-    <div class="counters tight">${cs.banSuggestions.map((b) => `<div class="counter click" data-act="champ" data-c="${b.championId}" data-p="${myPos}" title="${esc(b.reasons.join('\n'))}">${champImg(b.championId, 'c34')}<span>${esc(cname(b.championId))}</span>
-      <span class="small ${b.matchupWinRate != null ? 'bad' : 'muted'}">${b.matchupWinRate != null ? 'você ' + pct(b.matchupWinRate, 0) : pct(b.winRate, 0)}</span></div>`).join('')}</div></div>` : '';
-  const counters = opp && cs.laneCounters.length ? `<div class="card"><h2>Counters de ${esc(cname(opp.championId))}</h2>
-    <div class="counters tight">${cs.laneCounters.slice(0, 8).map((m) => `<div class="counter click" data-act="champ" data-c="${m.championId}" data-p="${myPos}">${champImg(m.championId, 'c34')}
+  const preview = csPreviewChamp(cs);
+  // Coluna "vs oponente" só quando há confronto conhecido para alguma sugestão
+  const hasMu = cs.suggestions.some((x) => x.matchupWinRate != null);
+  const sugs = cs.suggestions.slice(0, 10).map((s, i) => sugRow(s, i, { pos: myPos, mode: 'classic', preview, oppName: hasMu ? oppName : '' })).join('');
+  const counters = opp && cs.laneCounters.length ? `<div class="card"><h2>Counters de ${esc(oppName)}</h2>
+    <div class="counters wide">${cs.laneCounters.slice(0, 7).map((m) => `<div class="counter click" data-act="preview" data-c="${m.championId}">${champImg(m.championId, 'c34')}
       <span>${esc(cname(m.championId))}</span><span class="small ${wrCls(m.winRate)}">${pct(m.winRate, 0)}</span></div>`).join('')}</div></div>` : '';
-  const groups = partyGroups(cs.allies, false);
+  const groups = partyGroups(cs.allies, false) + partyGroups(cs.enemies, true);
   return `<div class="fit">
   ${csHead(cs, {
     sub: `<div class="sub">Sua rota (${esc(cs.positionSource)}): <span class="seg sm">${posButtons}</span></div>`,
-    right: opp ? `<div class="opp-card">${champImg(opp.championId, 'c34')}<div><div class="small muted">Oponente${opp.positionConfidence != null ? ` · ${Math.round(opp.positionConfidence * 100)}%` : ''}</div>
-      <b>${esc(cname(opp.championId))}</b>${cs.myMatchup ? ` <span class="${cs.myMatchup.winRate >= 0.5 ? 'good' : 'bad'}">· você ${pct(cs.myMatchup.winRate)}</span>` : ''}</div></div>` : '',
+    right: opp ? `<div class="opp-card">${champImg(opp.championId, 'c34')}<div><div class="small muted">Oponente de rota${opp.positionConfidence != null ? ` · ${Math.round(opp.positionConfidence * 100)}%` : ''}</div>
+      <b>${esc(oppName)}</b>${cs.myMatchup ? ` <span class="${cs.myMatchup.winRate >= 0.5 ? 'good' : 'bad'}">· você ${pct(cs.myMatchup.winRate)}</span>` : ''}</div></div>` : '',
   })}
   ${cs.notice ? `<div class="banner slim">${esc(cs.notice)}</div>` : ''}
   ${groups ? `<div class="groups slim">${groups}</div>` : ''}
   <div class="cs-grid">
-    <div class="col">
-      <div class="card team-card t-ally"><h2><span class="ally">Seu time</span></h2>${cs.allies.map((s) => slotHtml(s, false, false)).join('')}${dmgBar(cs.allyDamage, '')}</div>
-      <div class="card team-card t-enemy"><h2><span class="enemy">Inimigo</span></h2>${cs.enemies.map((s) => slotHtml(s, opp && s.cellId === opp.cellId, true)).join('')}${dmgBar(cs.enemyDamage, '')}</div>
+    <div class="col teams">
+      <div class="card team-card grow-card t-ally"><h2><span class="ally">Seu time</span></h2><div class="slots">${cs.allies.map((s) => slotHtml(s, false, false)).join('')}</div>${dmgBar(cs.allyDamage, '')}</div>
+      <div class="card team-card grow-card t-enemy"><h2><span class="enemy">Inimigo</span></h2><div class="slots">${cs.enemies.map((s) => slotHtml(s, opp && s.cellId === opp.cellId, true)).join('')}</div>${dmgBar(cs.enemyDamage, '')}</div>
     </div>
     <div class="col">
-      ${cs.myTurnToBan ? bans : ''}
-      <div class="card grow-card ${cs.myTurnToPick ? 'hl' : ''}"><h2>Melhores ${opp ? 'contra ' + esc(cname(opp.championId)) : 'para ' + esc(POS_NAME[cs.myPosition] ?? 'sua rota')}</h2><div class="scroll">${sugs || '<div class="muted">Sem sugestões ainda.</div>'}</div></div>
+      ${cs.myTurnToBan ? bansCard(cs, myPos) : ''}
+      <div class="card grow-card ${cs.myTurnToPick ? 'hl' : ''}"><h2>Melhores ${opp ? 'contra ' + esc(oppName) : 'para ' + esc(POS_NAME[cs.myPosition] ?? 'sua rota')}<span class="nocaps muted small" style="margin-left:auto">clique para ver a build</span></h2>
+        <div class="sug-list">${sugs || '<div class="muted">Sem sugestões ainda.</div>'}</div></div>
     </div>
-    <div class="col">
-      ${cs.myBuild ? `<div class="card">${buildCompact(cs.myBuild, { spells: true })}</div>` : ''}
+    <div class="col side-col">
+      ${csBuild(cs, myPos, 'classic')}
       ${counters}
-      ${!cs.myTurnToBan ? bans : ''}
+      ${!cs.myTurnToBan ? bansCard(cs, myPos) : ''}
     </div>
   </div></div>`;
 }
@@ -490,17 +532,24 @@ function buildCompact(b, opts = {}) {
   const late = b.late.filter((l) => !b.core[0]?.ids.includes(l.ids[0]) && !(S.items[l.ids[0]]?.into?.length)).slice(0, 6);
   const page = b.runes[Math.min(S.runeIdx, b.runes.length - 1)] ?? b.runes[0];
   const skill = b.skills[0];
+  const known = (b.counters ?? []).filter((m) => m.play >= 100);
+  const strong = [...known].sort((x, y) => y.winRate - x.winRate).slice(0, 5);
+  const weak = [...known].sort((x, y) => x.winRate - y.winRate).slice(0, 5);
+  const vs = opts.opp ? (b.counters ?? []).find((m) => m.championId === opts.opp) : null;
+  const muRow = (list, cls, label) => list.length ? `<div class="bc-row"><span class="lbl ${cls}">${label}</span><div class="mus">${list.map((m) => `<div class="mu click" data-act="champ" data-c="${m.championId}" data-p="${b.position}" title="${esc(cname(m.championId))}: ${pct(m.winRate)} em ${num(m.play)} jogos">${champImg(m.championId, 'c30')}<span class="${wrCls(m.winRate)}">${pct(m.winRate, 0)}</span></div>`).join('')}</div></div>` : '';
   return `<div class="bc-head">${champImg(b.championId, 'c46')}<div class="grow">
-      <div><b style="font-size:15px">${esc(cname(b.championId))}</b> <span class="muted">${mode === 'classic' ? POS_NAME[b.position] : esc(MODE_NAME[mode])}</span> ${tierBadge(b.tier)}</div>
-      <div class="small muted">${isArena && b.avgPlace ? `pos. média <b>${b.avgPlace.toFixed(2).replace('.', ',')}</b> · 1º ${pct(b.firstRate ?? 0, 0)} · top 4 ${pct(b.winRate, 0)}` : `<b class="${wrCls(b.winRate)}">${pct(b.winRate)}</b> vitórias`} · ${num(b.play)} jogos</div></div>
+      <div><b style="font-size:16px">${esc(cname(b.championId))}</b> <span class="muted">${mode === 'classic' ? POS_NAME[b.position] : esc(MODE_NAME[mode])}</span> ${tierBadge(b.tier)}</div>
+      <div class="small muted">${isArena && b.avgPlace ? `pos. média <b>${b.avgPlace.toFixed(2).replace('.', ',')}</b> · 1º ${pct(b.firstRate ?? 0, 0)} · top 4 ${pct(b.winRate, 0)}` : `<b class="${wrCls(b.winRate)}">${pct(b.winRate)}</b> vitórias`} · ${num(b.play)} jogos${vs ? ` · <span class="${wrCls(vs.winRate)}">vs ${esc(cname(vs.championId))} ${pct(vs.winRate)}</span>` : ''}</div></div>
       <button class="btn sm" data-act="champ" data-c="${b.championId}" data-p="${b.position}" data-m="${mode}">Detalhes</button></div>
-    ${page ? runesRow(page) : ''}
-    <div class="bc-row"><span class="lbl">Núcleo</span><div class="items">${(b.core[0]?.ids ?? []).map((id, i) => (i ? '<span class="arrow">›</span>' : '') + itemImg(id, 'i30')).join('')}${b.boots[0] ? '<span class="arrow">+</span>' + itemImg(b.boots[0].ids[0], 'i30') : ''}</div>
+    ${page ? `<div class="bc-sec">${runesRow(page)}</div>` : ''}
+    <div class="bc-row"><span class="lbl">Núcleo</span><div class="items">${(b.core[0]?.ids ?? []).map((id, i) => (i ? '<span class="arrow">›</span>' : '') + itemImg(id)).join('')}</div>
       <span class="small muted">${b.core[0] ? pct(b.core[0].winRate, 0) : ''}</span></div>
-    ${b.starters[0] ? `<div class="bc-row"><span class="lbl">Início</span><div class="items">${b.starters[0].ids.map((id) => itemImg(id, 'i26')).join('')}</div></div>` : ''}
-    <div class="bc-row"><span class="lbl">Finais</span><div class="items">${late.map((l) => itemImg(l.ids[0], 'i26')).join('')}</div></div>
+    ${b.starters[0] ? `<div class="bc-row"><span class="lbl">Início</span><div class="items">${b.starters[0].ids.map((id) => itemImg(id, 'i30')).join('')}</div>
+      ${b.boots.length ? `<span class="lbl" style="margin-left:14px">Botas</span><div class="items">${b.boots.slice(0, 2).map((x) => itemImg(x.ids[0], 'i30')).join('')}</div>` : ''}</div>` : ''}
+    <div class="bc-row"><span class="lbl">Finais</span><div class="items">${late.map((l) => itemImg(l.ids[0], 'i30')).join('')}</div></div>
     <div class="bc-row"><span class="lbl">Habilid.</span>${skill?.priority?.length ? `<b class="gold">${skill.priority.join(' › ')}</b>` : '<span class="muted">—</span>'}
-      ${opts.spells !== false && b.spells[0] ? `<span class="grow"></span><div class="items">${b.spells[0].ids.map((id) => spellImg(id, 'i26')).join('')}</div>` : ''}</div>
+      ${opts.spells !== false && b.spells[0] ? `<span class="lbl" style="margin-left:auto;width:auto">Feitiços</span><div class="items">${b.spells[0].ids.map((id) => spellImg(id, 'i30')).join('')}</div>` : ''}</div>
+    ${muRow(strong, 'good', 'Forte vs')}${muRow(weak, 'bad', 'Fraco vs')}
     ${isArena ? prismaticHtml(b, [], 4, true) : ''}
     ${b.augments?.length ? augmentsHtml(b, 3, 'stack') : ''}
     <div class="actions tight">
@@ -690,8 +739,7 @@ function buildPanel(g) {
     ${next ? `<div class="next">${itemImg(g.nextItem, 'i44 lg')}<div class="grow"><div class="small muted">Próxima compra</div><div class="nx">${esc(next.name)}</div><div class="small muted"><span class="coin"></span>${num(next.gold)}</div></div>
       ${g.nextSkill ? `<div class="nsk"><div class="small muted">Habilidade</div><div class="big gold">${g.nextSkill}</div></div>` : ''}</div>` : '<div class="muted small">Build principal completa.</div>'}
     <div class="bc-row"><span class="lbl">Núcleo</span><div class="items">${g.corePath.map((s, i) => (i ? '<span class="arrow">›</span>' : '') + itemStep(s, 'i30')).join('')}${g.boots ? '<span class="arrow">+</span>' + itemStep(g.boots, 'i30') : ''}</div>
-      <span class="small muted">${g.build ? pct(g.build.core[0]?.winRate ?? 0, 0) : ''}${g.sameAsShop ? ' · <span class="good">= loja</span>' : ''}</span></div>
-    ${g.altCorePath ? `<div class="bc-row"><span class="lbl">Variação</span><div class="items">${g.altCorePath.map((s, i) => (i ? '<span class="arrow">›</span>' : '') + itemStep(s, 'i26')).join('')}</div><span class="small muted">suas compras</span></div>` : ''}
+      <span class="small muted">${g.sameAsShop ? '<span class="good" title="Os mesmos itens do conjunto AL na loja do jogo">= loja do jogo</span>' : g.build ? '<span class="warn" title="Nenhuma build do app foi enviada para a loja nesta partida">sem build na loja</span>' : ''}</span></div>
     <div class="bc-row"><span class="lbl">Finais</span><div class="items">${g.lateOptions.map((s) => itemStep(s, 'i26')).join('')}</div></div>
     ${arena && g.build ? prismaticHtml(g.build, me.items, 6) : ''}
     ${!arena && order ? `<div class="bc-row"><span class="lbl">Habilid.</span>${skillGrid(order, g.nextSkillIndex ?? null, 'mini')}</div>` : ''}
@@ -703,7 +751,7 @@ function buildPanel(g) {
 /** Itens situacionais e tipo de dano, compactos. */
 function infoPanel(g) {
   const t = g.threats;
-  const sit = g.situational.length ? `<div class="sits">${g.situational.slice(0, 4).map((s) => `<div class="sit">${itemImg(s.itemId, 'i30')}<div class="grow"><div class="an">${esc(S.items[s.itemId]?.name ?? s.itemId)}</div><div class="small muted one">${esc(s.reason)}</div></div></div>`).join('')}</div>`
+  const sit = g.situational.length ? `<div class="sits">${g.situational.slice(0, 4).map((s) => `<div class="sit">${itemImg(s.itemId, 'i30')}<div class="grow"><div class="an">${esc(S.items[s.itemId]?.name ?? s.itemId)}${g.sameAsShop ? (s.inShop ? ' <span class="tag good" title="Também está no conjunto AL da loja">na loja</span>' : ' <span class="tag" title="Não está no conjunto da loja: o time inimigo só apareceu depois que a build foi enviada (procure pelo nome na loja)">fora da loja</span>') : ''}</div><div class="small muted one">${esc(s.reason)}</div></div></div>`).join('')}</div>`
     : '<div class="muted small">Nenhuma ameaça específica: siga a build.</div>';
   const chips = (label, ids, cls) => ids.length ? `<span class="small muted">${label}:</span> ${ids.slice(0, 3).map((id) => `<span class="chip ${cls}">${esc(cname(id))}</span>`).join('')} ` : '';
   return `<div class="card"><h2>Situacionais</h2>${sit}
@@ -914,6 +962,7 @@ document.addEventListener('click', async (e) => {
   switch (act) {
     case 'pos': await call('setPosition', { position: v }); break;
     case 'champ': openChamp(c, p, el.dataset.m); break;
+    case 'preview': S.csPrev = c ? { c, mine: S.state?.champSelect?.myChampionId ?? 0 } : null; renderPage(); break;
     case 'bench': toast(await call('benchSwap', { championId: c })); break;
     case 'mmode': S.modal.mode = v; S.runeIdx = 0; renderModal(); break;
     case 'cmode': S.champMode = v; S.runeIdx = 0; renderPage(); break;

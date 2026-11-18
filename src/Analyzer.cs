@@ -28,6 +28,8 @@ public sealed class GameInput
     public Dictionary<string, RankInfo> RanksByRiotId { get; init; } = [];
     /// <summary>Build enviada para a loja nesta partida (campeão, rota, região, elo).</summary>
     public (int Champ, string Pos, string Region, string Tier)? ShopBuild { get; init; }
+    /// <summary>Itens exatos enviados para a loja (núcleo, botas, finais, situacionais).</summary>
+    public ShopItems? ShopItems { get; init; }
 }
 
 public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
@@ -540,7 +542,7 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
             view.SameAsShop = shop != null;
             var build = mode == AnalisadorLoL.Mode.Unsupported ? null : await meta.GetModeBuildAsync(meP.ChampionId, mode, view.BuildRegion);
             view.Build = build;
-            if (build != null) FillBuildPath(view, build, meP, active);
+            if (build != null) FillBuildPath(view, build, meP, active, shop != null ? input.ShopItems : null);
         }
         else if (meP.Position != null && meP.ChampionId > 0)
         {
@@ -550,7 +552,7 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
             view.SameAsShop = shop != null;
             var build = await meta.GetBuildAsync(meP.ChampionId, meP.Position, view.BuildRegion, view.BuildTier);
             view.Build = build;
-            if (build != null) FillBuildPath(view, build, meP, active);
+            if (build != null) FillBuildPath(view, build, meP, active, shop != null ? input.ShopItems : null);
             if (build != null && view.LaneOpponent != null)
                 view.MyMatchup = build.Counters.FirstOrDefault(m => m.ChampionId == view.LaneOpponent.ChampionId);
         }
@@ -558,6 +560,11 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
         var (threats, situational) = Situational.Analyze(meta, meP, view.Enemies, view.Build, mode);
         view.Threats = threats;
         view.Situational = situational;
+        if (view.SameAsShop && input.ShopItems is { } si)
+        {
+            var inShop = si.Core.Concat(si.Boots).Concat(si.Late).Concat(si.Situational).ToHashSet();
+            foreach (var x in situational) x.InShop = inShop.Contains(x.ItemId);
+        }
         view.AllyDamage = Situational.Damage(meta, view.Allies);
         return view;
     }
@@ -600,7 +607,7 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
         return (ally, enemy);
     }
 
-    void FillBuildPath(GameView view, ChampionBuild build, PlayerView me, JsonNode? active)
+    void FillBuildPath(GameView view, ChampionBuild build, PlayerView me, JsonNode? active, ShopItems? shop)
     {
         var owned = me.Items.ToHashSet();
         string Status(int id)
@@ -610,29 +617,21 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
             return "falta";
         }
         bool Exists(int id) => meta.Items.ContainsKey(id);
-
-        // Núcleo: sempre o mais popular, o mesmo que vai para a loja do jogo.
-        var core = build.Core.FirstOrDefault();
-        var coreIds = core?.Ids.Where(Exists).ToList() ?? [];
-        view.CorePath = coreIds.Select(id => new BuildStep { ItemId = id, Status = Status(id) }).ToList();
-
-        // Se as compras batem mais com outra variação popular, ela aparece à parte (só informativo).
-        var alt = build.Core.Skip(1).Take(5).Select(c => (c, n: c.Ids.Count(owned.Contains)))
-            .Where(x => x.n > (core?.Ids.Count(owned.Contains) ?? 0)).OrderByDescending(x => x.n).Select(x => x.c).FirstOrDefault();
-        if (alt != null)
-        {
-            view.AltCorePath = alt.Ids.Where(Exists).Select(id => new BuildStep { ItemId = id, Status = Status(id) }).ToList();
-            view.AltCoreWinRate = alt.WinRate;
-        }
-
         bool IsBoots(int id) => meta.Items.TryGetValue(id, out var it) && it.Tags.Contains("Boots") && it.Gold > 300;
-        var ownedBoots = me.Items.FirstOrDefault(IsBoots);
-        var bootId = ownedBoots > 0 ? ownedBoots : build.Boots.Select(b => b.Ids.FirstOrDefault()).FirstOrDefault(Exists);
-        if (bootId > 0) view.Boots = new BuildStep { ItemId = bootId, Status = Status(bootId) };
+        BuildStep Step(int id) => new() { ItemId = id, Status = Status(id) };
 
-        view.LateOptions = build.Late.Select(l => l.Ids.FirstOrDefault())
-            .Where(id => Exists(id) && meta.Items[id].Into.Length == 0 && !coreIds.Contains(id) && !IsBoots(id)).Distinct().Take(6)
-            .Select(id => new BuildStep { ItemId = id, Status = Status(id) }).ToList();
+        // Com a build na loja: mostra exatamente os mesmos itens do conjunto "AL" (núcleo, botas e finais na mesma ordem).
+        var coreIds = shop is { Core.Length: > 0 } ? shop.Core.Where(Exists).ToList() : build.Core.FirstOrDefault()?.Ids.Where(Exists).ToList() ?? [];
+        view.CorePath = coreIds.Select(Step).ToList();
+
+        var ownedBoots = me.Items.FirstOrDefault(IsBoots);
+        var bootList = shop is { Boots.Length: > 0 } ? shop.Boots : build.Boots.Select(b => b.Ids.FirstOrDefault()).ToArray();
+        var bootId = ownedBoots > 0 ? ownedBoots : bootList.FirstOrDefault(Exists);
+        if (bootId > 0) view.Boots = Step(bootId);
+
+        view.LateOptions = (shop is { Late.Length: > 0 } ? shop.Late.Where(Exists)
+                : build.Late.Select(l => l.Ids.FirstOrDefault()).Where(id => Exists(id) && meta.Items[id].Into.Length == 0 && !coreIds.Contains(id) && !IsBoots(id)).Take(8))
+            .Distinct().Select(Step).ToList();
 
         view.NextItem = view.CorePath.FirstOrDefault(x => x.Status != "comprado")?.ItemId
                         ?? (view.Boots is { Status: not "comprado" } ? (int?)view.Boots.ItemId : null)

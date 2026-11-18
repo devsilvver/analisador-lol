@@ -86,6 +86,7 @@ public sealed class Engine : IDisposable
     string autoRunesKey = "", autoSetKey = "", autoSpellsKey = "";
     int spellTries;
     (int Champ, string Pos, string Region, string Tier)? shopBuild;
+    ShopItems? shopItems;
     List<Slot> lastEnemies = [];
     GameView? lastGame;
     Dictionary<int, string> knownPositions = [];
@@ -110,21 +111,23 @@ public sealed class Engine : IDisposable
         Settings = settings;
         lcu = new LeagueClient(() => Settings.LeaguePath);
         analyzer = new Analyzer(meta, () => Settings);
-        shopBuild = LoadShopBuild();
+        (shopBuild, shopItems) = LoadShopBuild();
     }
 
     // A build enviada para a loja é guardada em disco: se o app for reaberto no meio da partida, continua igual.
     static readonly string ShopFile = Path.Combine(Paths.Local, "build-na-loja.json");
 
-    static (int Champ, string Pos, string Region, string Tier)? LoadShopBuild()
+    static ((int Champ, string Pos, string Region, string Tier)?, ShopItems?) LoadShopBuild()
     {
         try
         {
-            if (!File.Exists(ShopFile) || DateTime.Now - File.GetLastWriteTime(ShopFile) > TimeSpan.FromHours(3)) return null;
+            if (!File.Exists(ShopFile) || DateTime.Now - File.GetLastWriteTime(ShopFile) > TimeSpan.FromHours(3)) return (null, null);
             var n = JsonNode.Parse(File.ReadAllText(ShopFile))!;
-            return (n["champ"]!.GetValue<int>(), n["pos"]!.GetValue<string>(), n["region"]!.GetValue<string>(), n["tier"]!.GetValue<string>());
+            int[] Ids(string k) => (n[k] as JsonArray)?.Select(x => x!.GetValue<int>()).ToArray() ?? [];
+            var items = n["core"] is JsonArray ? new ShopItems(Ids("core"), Ids("boots"), Ids("late"), Ids("sit")) : null;
+            return ((n["champ"]!.GetValue<int>(), n["pos"]!.GetValue<string>(), n["region"]!.GetValue<string>(), n["tier"]!.GetValue<string>()), items);
         }
-        catch { return null; }
+        catch { return (null, null); }
     }
 
     void SaveShopBuild()
@@ -133,7 +136,12 @@ public sealed class Engine : IDisposable
         try
         {
             Directory.CreateDirectory(Paths.Local);
-            File.WriteAllText(ShopFile, new JsonObject { ["champ"] = b.Champ, ["pos"] = b.Pos, ["region"] = b.Region, ["tier"] = b.Tier }.ToJsonString());
+            static JsonArray Arr(int[]? ids) => new((ids ?? []).Select(i => (JsonNode)i).ToArray());
+            File.WriteAllText(ShopFile, new JsonObject
+            {
+                ["champ"] = b.Champ, ["pos"] = b.Pos, ["region"] = b.Region, ["tier"] = b.Tier,
+                ["core"] = Arr(shopItems?.Core), ["boots"] = Arr(shopItems?.Boots), ["late"] = Arr(shopItems?.Late), ["sit"] = Arr(shopItems?.Situational),
+            }.ToJsonString());
         }
         catch { }
     }
@@ -263,7 +271,7 @@ public sealed class Engine : IDisposable
                     state.Mode = gameMode; state.ModeName = Mode.Name(gameMode);
                     lastGame = await analyzer.GameAsync(new GameInput
                     {
-                        Data = data, KnownPositions = knownPositions, ShopBuild = shopBuild, Mode = gameMode, ArenaTeamSize = arenaTeamSize,
+                        Data = data, KnownPositions = knownPositions, ShopBuild = shopBuild, ShopItems = shopItems, Mode = gameMode, ArenaTeamSize = arenaTeamSize,
                         ArenaTeam = gameMode == Mode.Arena && connected ? await ArenaTeamWithNames() : arenaTeam,
                         ArenaOrder = gameMode == Mode.Arena && connected ? await ArenaOrderAsync() : [],
                         RanksByRiotId = riotIdToPuuid.Where(kv => kv.Value != null && ranks.TryGetValue(kv.Value, out var r) && r != null)
@@ -724,16 +732,24 @@ public sealed class Engine : IDisposable
         };
         var blocks = new JsonArray();
         if (b.Starters.FirstOrDefault() is { } st) blocks.Add(Block($"Iniciais ({Pct(st.WinRate)} vitórias)", mode == Mode.Classic ? st.Ids.Concat([3340, 2055]) : st.Ids));
-        if (b.Core.FirstOrDefault() is { } core) blocks.Add(Block($"Build principal ({Pct(core.WinRate)} vitórias)", core.Ids));
+        // Listas guardadas: a tela da partida mostra exatamente estes itens.
+        bool Valid(int i) => meta.Items.ContainsKey(i);
+        bool IsBoots(int i) => meta.Items.TryGetValue(i, out var it) && it.Tags.Contains("Boots") && it.Gold > 300;
+        var coreIds = (b.Core.FirstOrDefault()?.Ids ?? []).Where(Valid).Distinct().ToArray();
+        var bootIds = b.Boots.Take(3).Select(x => x.Ids[0]).Where(Valid).Distinct().ToArray();
+        var lateIds = b.Late.Select(x => x.Ids[0]).Where(i => !coreIds.Contains(i) && !IsBoots(i) && meta.Items.TryGetValue(i, out var it) && it.Into.Length == 0).Distinct().Take(8).ToArray();
+        int[] sitIds = [];
+        if (b.Core.FirstOrDefault() is { } core) blocks.Add(Block($"Build principal ({Pct(core.WinRate)} vitórias)", coreIds));
         if (b.Prismatic.Length > 0) blocks.Add(Block("Itens prismáticos", b.Prismatic.Take(6).Select(x => x.Ids[0])));
-        if (b.Boots.Length > 0) blocks.Add(Block("Botas", b.Boots.Take(3).Select(x => x.Ids[0])));
-        blocks.Add(Block("Opções finais", b.Late.Select(x => x.Ids[0]).Where(i => b.Core.FirstOrDefault()?.Ids.Contains(i) != true && meta.Items.TryGetValue(i, out var it) && it.Into.Length == 0).Take(8)));
+        if (bootIds.Length > 0) blocks.Add(Block("Botas", bootIds));
+        blocks.Add(Block("Opções finais", lateIds));
         // Situacionais contra o time inimigo já revelado na seleção
         var foes = lastEnemies.Where(e => e.ChampionId > 0).Select(e => new PlayerView { ChampionId = e.ChampionId, Position = e.Position }).ToList();
         if (foes.Count > 0)
         {
             var (_, sit) = Situational.Analyze(meta, new PlayerView { ChampionId = championId, Position = position }, foes, b, mode);
-            if (sit.Count > 0) blocks.Add(Block("Situacionais contra este time", sit.Select(x => x.ItemId)));
+            sitIds = sit.Select(x => x.ItemId).Where(Valid).Distinct().ToArray();
+            if (sitIds.Length > 0) blocks.Add(Block("Situacionais contra este time", sitIds));
         }
         if (mode == Mode.Classic || mode == Mode.Urf) blocks.Add(Block("Consumíveis", [2003, 2055, 2138, 2139, 2140]));
         else if (mode != Mode.Arena) blocks.Add(Block("Consumíveis", [2003, 2138, 2139, 2140]));
@@ -754,6 +770,7 @@ public sealed class Engine : IDisposable
         using var res = await lcu.SendAsync(HttpMethod.Put, path, current);
         if (res?.IsSuccessStatusCode != true) return $"O cliente recusou a build ({(int?)res?.StatusCode}).";
         shopBuild = (championId, position, Settings.Region, Settings.Tier);
+        shopItems = new ShopItems(coreIds, bootIds, lateIds, sitIds);
         SaveShopBuild();
         Log.Write($"Build na loja: campeão {championId} {position}, {Settings.Region}/{Settings.Tier}, núcleo {string.Join(",", b.Core.FirstOrDefault()?.Ids ?? [])}");
         return "Build enviada para a loja do jogo.";
