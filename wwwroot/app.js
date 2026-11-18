@@ -380,7 +380,7 @@ function csHead(cs, extra) {
     <div class="grow">${cs.mode && cs.mode !== 'classic' ? `<div class="kicker">${esc(MODE_NAME[cs.mode] ?? cs.mode)}</div>` : ''}<h1>${esc(cs.stage || 'Seleção de campeões')}</h1>${extra.sub ?? ''}</div>
     ${extra.right ?? ''}
     <div class="toggles"><div class="small muted">Com o campeão definido</div>
-      ${extra.runes !== false ? `<label class="switch"><input type="checkbox" data-set="autoRunes" ${S.settings.autoRunes ? 'checked' : ''}> Runas</label>` : ''}
+      ${extra.runes !== false ? `<label class="switch"><input type="checkbox" data-set="autoRunes" ${S.settings.autoRunes ? 'checked' : ''}> Runas e feitiços</label>` : ''}
       <label class="switch"><input type="checkbox" data-set="autoItemSet" ${S.settings.autoItemSet ? 'checked' : ''}> Build na loja</label></div>
   </div>`;
 }
@@ -872,7 +872,7 @@ function renderSettings() {
   <div class="card"><h2>Cliente do LoL</h2><div class="form">
     <label>Aceitar partidas automaticamente<small>Quando a fila encontrar uma partida, o programa aceita por você em até 2 segundos, mesmo escondido.</small></label><div>${sw('autoAccept', 'Ativado')}</div>
     <label>Enviar build para a loja automaticamente<small>Ao confirmar o campeão, cria o conjunto “AL …” na loja do jogo, com itens situacionais contra o time inimigo. É atualizado até o fim da seleção.</small></label><div>${sw('autoItemSet', 'Ativado')}</div>
-    <label>Importar runas automaticamente<small>Ao confirmar o campeão, aplica as runas mais usadas. Usa uma página própria “AL …”; se não houver espaço livre, substitui a página atual na primeira vez.</small></label><div>${sw('autoRunes', 'Ativado')}</div>
+    <label>Importar runas e feitiços automaticamente<small>Ao confirmar o campeão, aplica as runas e os feitiços de invocador mais usados (o Flash fica na tecla escolhida abaixo). Usa uma página própria “AL …”; se não houver espaço livre, substitui a página atual na primeira vez.</small></label><div>${sw('autoRunes', 'Ativado')}</div>
     <label>Flash na tecla</label><select data-set="flashKey">${opt([['D', 'D'], ['F', 'F']], s.flashKey)}</select>
   </div></div>
   <div class="card"><h2>Sugestões de campeão</h2><div class="form">

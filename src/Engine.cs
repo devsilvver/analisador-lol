@@ -83,7 +83,8 @@ public sealed class Engine : IDisposable
         return list;
     }
     string? manualPosition;
-    string autoRunesKey = "", autoSetKey = "";
+    string autoRunesKey = "", autoSetKey = "", autoSpellsKey = "";
+    int spellTries;
     (int Champ, string Pos, string Region, string Tier)? shopBuild;
     List<Slot> lastEnemies = [];
     GameView? lastGame;
@@ -209,7 +210,7 @@ public sealed class Engine : IDisposable
         if (phase != lastPhase)
         {
             profileAt = DateTime.MinValue; // fim de partida etc.: perfil e histórico atualizados
-            if (phase == "ChampSelect") { manualPosition = null; autoRunesKey = autoSetKey = ""; knownPositions = []; ResetParties(); arenaOrder = []; arenaOrderGame = 0; }
+            if (phase == "ChampSelect") { manualPosition = null; autoRunesKey = autoSetKey = autoSpellsKey = ""; spellTries = 0; knownPositions = []; ResetParties(); arenaOrder = []; arenaOrderGame = 0; }
             if (phase is "ChampSelect" or "GameStart" or "InProgress" or "Reconnect") await RefreshMode();
             else if (phase is "None" or "Lobby" or "Desconectado") currentMode = Mode.Classic;
             else lastEnemies = [];
@@ -601,6 +602,14 @@ public sealed class Engine : IDisposable
             var r = await ImportRunes(v.MyChampionId, pos, 0);
             if (r.StartsWith("Sem dados")) autoRunesKey = ""; // dados ainda não chegaram: tenta de novo
             else notes.Add(r);
+        }
+        // Feitiços de invocador acompanham as runas (todos os modos, menos a Arena, que não tem feitiços).
+        if (Settings.AutoRunes && key != autoSpellsKey && v.Mode != Mode.Arena)
+        {
+            autoSpellsKey = key;
+            var r = await ApplySpells(v.MyChampionId, pos, 0);
+            if (r.StartsWith("Sem dados") || (!r.StartsWith("Feitiços") && ++spellTries < 3)) autoSpellsKey = ""; // tenta de novo
+            else { spellTries = 0; notes.Add(r); }
         }
         // A build é reenviada sempre que um inimigo novo aparece: o bloco de situacionais acompanha o time adversário.
         var setKey = key + "|" + string.Join(",", v.Enemies.Where(e => e.ChampionId > 0).Select(e => e.ChampionId).Order());
