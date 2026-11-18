@@ -1,0 +1,38 @@
+﻿ANALISADOR LoL
+Criado por Guilherme Silvestrini
+github.com/devsilvver
+
+------------------------------------------------------------
+
+O que é
+Um assistente leve para League of Legends, que roda junto com o jogo:
+
+ - Seleção de campeões: sugere os melhores campeões para a sua rota com
+   base no meta do patch atual, no confronto contra o oponente, na
+   composição do seu time e na sua maestria. Mostra counters e bans.
+ - Runas, feitiços e build: importa para o cliente e envia a build para
+   a loja do jogo automaticamente.
+ - Durante a partida: próxima compra, itens situacionais, ouro de cada
+   time e de cada rota, objetivos, quem está em duo/trio e o elo de todos.
+ - Funciona em ranqueada, normal, ARAM, ARAM com aprimoramentos, Arena
+   (aprimoramentos e itens prismáticos), URF e Nexus Blitz.
+ - Tela de perfil com o seu elo e as suas últimas partidas.
+
+Como usar
+ - O programa fica na bandeja do Windows (perto do relógio) e inicia
+   junto com o Windows (dá para desligar em Ajustes).
+ - Ctrl+X mostra e esconde o programa por cima do jogo (com o jogo em
+   modo "Sem bordas" ou "Janela").
+ - O X da janela só esconde. Para fechar de vez: botão direito no ícone
+   da bandeja > Sair.
+
+Privacidade e segurança
+ - Usa apenas as APIs locais oficiais do cliente e do jogo (não lê a
+   memória do jogo nem altera arquivos do LoL).
+ - Estatísticas do meta: op.gg. Nomes e ícones: Riot Data Dragon e
+   CommunityDragon.
+
+Não é afiliado à Riot Games. League of Legends é marca da Riot Games, Inc.
+
+------------------------------------------------------------
+© 2026 Guilherme Silvestrini — github.com/devsilvver
