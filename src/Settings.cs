@@ -8,7 +8,7 @@ public class AppSettings
     public string Region { get; set; } = "global";
     public bool OwnedOnly { get; set; } = true;
     public double MasteryWeight { get; set; } = 1.0;
-    public string FlashKey { get; set; } = "D";
+    public string FlashKey { get; set; } = "F";
     public bool AutoRunes { get; set; } = false;
     public bool AutoItemSet { get; set; } = true;
     public bool AutoAccept { get; set; } = false;
