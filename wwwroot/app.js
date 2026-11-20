@@ -88,27 +88,27 @@ const regionName = (k) => REGIONS.find((t) => t[0] === k)?.[1] ?? k;
 function champImg(id, cls = '') {
   const c = S.champs[id];
   if (!c) return `<div class="ci ${cls}"></div>`;
-  return `<img class="ci ${cls}" src="${c.icon}" alt="" title="${esc(c.name)}" loading="lazy" decoding="async">`;
+  return `<img class="ci ${cls}" src="${c.icon}" alt="" data-tt="c:${id}" loading="lazy" decoding="async">`;
 }
 function itemImg(id, cls = '') {
   const it = S.items[id];
   if (!it) return id ? `<div class="ii ${cls}" title="Item ${id}"></div>` : `<div class="ii ${cls} empty-slot"></div>`;
-  return `<img class="ii ${cls}" src="${it.icon}" alt="" title="${esc(it.name)} — ${num(it.gold)} de ouro${it.plaintext ? '\n' + esc(it.plaintext) : ''}" loading="lazy" decoding="async">`;
+  return `<img class="ii ${cls}" src="${it.icon}" alt="" data-tt="i:${id}" loading="lazy" decoding="async">`;
 }
 function itemStep(step, cls = '') {
-  return `<div class="item ${step.status}" title="${step.status === 'comprado' ? 'Já comprado' : step.status === 'em-progresso' ? 'Você já tem um componente' : 'Falta comprar'}">${itemImg(step.itemId, cls)}</div>`;
+  return `<div class="item ${step.status}">${itemImg(step.itemId, cls)}</div>`;
 }
 function runeImg(id, cls = '') {
   const r = S.runes[id];
-  return r ? `<img class="ri ${cls}" src="${r.icon}" alt="" title="${esc(r.name)}\n${esc(r.desc)}" loading="lazy">` : '';
+  return r ? `<img class="ri ${cls}" src="${r.icon}" alt="" data-tt="r:${id}" loading="lazy">` : '';
 }
 function treeImg(id) {
   const t = S.trees[id];
-  return t ? `<img class="ri tree" src="${t.icon}" alt="" title="${esc(t.name)}">` : '';
+  return t ? `<img class="ri tree" src="${t.icon}" alt="" data-tt="t:${id}">` : '';
 }
 function spellImg(id, cls = 'sm') {
   const s = S.spells[id];
-  return s ? `<img class="ii ${cls}" src="${s.icon}" alt="" title="${esc(s.name)}">` : '';
+  return s ? `<img class="ii ${cls}" src="${s.icon}" alt="" data-tt="s:${id}">` : '';
 }
 function tierBadge(t) { return t ? `<span class="tier t${t}">Tier ${t}</span>` : ''; }
 
@@ -147,6 +147,72 @@ function dmgBar(d, label) {
       <span><span style="color:var(--phys)">Físico ${d.physical}%</span> · <span style="color:var(--magic)">Mágico ${d.magic}%</span>${d.true ? ` · <span style="color:var(--truedmg)">Verdadeiro ${d.true}%</span>` : ''}</span></div>
     <div class="bar" style="margin-top:5px"><i style="width:${d.physical}%;background:var(--phys)"></i><i style="width:${d.magic}%;background:var(--magic)"></i><i style="flex:1;background:var(--truedmg)"></i></div></div>`;
 }
+
+// ---------- dica ao parar o mouse (itens, aprimoramentos, runas, feitiços, campeões)
+const ROLE_PT = { Fighter: 'Lutador', Tank: 'Tanque', Mage: 'Mago', Assassin: 'Assassino', Marksman: 'Atirador', Support: 'Suporte' };
+const AUG_RARITY = { prata: ['Prata', 'silver'], ouro: ['Ouro', 'gold'], prismatico: ['Prismático', 'prism'], evento: ['Especial', 'silver'] };
+/** Conteúdo da dica. As descrições (desc) já vêm do C# como HTML seguro (texto escapado, só marcações simples). */
+function tipHtml(kind, id) {
+  if (kind === 'i') {
+    const it = S.items[id];
+    if (!it) return '';
+    return `<div class="tt-h"><img src="${it.icon}" alt=""><div><b>${esc(it.name)}</b><div class="tt-sub"><span class="coin"></span>${num(it.gold)}</div></div></div>
+      ${it.desc ? `<div class="tt-d">${it.desc}</div>` : it.plaintext ? `<div class="tt-d">${esc(it.plaintext)}</div>` : ''}`;
+  }
+  if (kind === 'a') {
+    const a = S.augments[id];
+    if (!a) return '';
+    const [rn, rc] = AUG_RARITY[a.rarity] ?? ['', 'silver'];
+    return `<div class="tt-h">${a.icon ? `<img src="${a.icon}" alt="">` : ''}<div><b>${esc(a.name)}</b><div class="tt-sub r-${rc}">Aprimoramento ${rn.toLowerCase()}</div></div></div>
+      <div class="tt-d">${a.desc || '<span class="muted">Sem descrição disponível para este aprimoramento.</span>'}</div>`;
+  }
+  if (kind === 'r') {
+    const r = S.runes[id];
+    return r ? `<div class="tt-h"><img src="${r.icon}" alt=""><div><b>${esc(r.name)}</b><div class="tt-sub">${esc(S.trees[r.treeId]?.name ?? '')}</div></div></div>${r.desc ? `<div class="tt-d">${r.desc}</div>` : ''}` : '';
+  }
+  if (kind === 't') { const t = S.trees[id]; return t ? `<div class="tt-h"><img src="${t.icon}" alt=""><b>${esc(t.name)}</b></div>` : ''; }
+  if (kind === 's') {
+    const s = S.spells[id];
+    return s ? `<div class="tt-h"><img src="${s.icon}" alt=""><div><b>${esc(s.name)}</b>${s.cooldown ? `<div class="tt-sub">Recarga: ${esc(s.cooldown)} s</div>` : ''}</div></div>${s.desc ? `<div class="tt-d">${s.desc}</div>` : ''}` : '';
+  }
+  if (kind === 'c') {
+    const c = S.champs[id];
+    return c ? `<div class="tt-h"><img src="${c.icon}" alt=""><div><b>${esc(c.name)}</b><div class="tt-sub">${esc(c.title)}</div></div></div>
+      <div class="tt-d muted">${c.tags.map((t) => ROLE_PT[t] ?? t).join(' · ')}</div>` : '';
+  }
+  return '';
+}
+let tipTimer, tipFor = null, tipX = 0, tipY = 0;
+function placeTip() {
+  const t = $('#tip');
+  const w = t.offsetWidth, h = t.offsetHeight, m = 14;
+  let x = tipX + m, y = tipY + m;
+  if (x + w > innerWidth - 6) x = Math.max(6, tipX - w - m);
+  if (y + h > innerHeight - 6) y = Math.max(6, tipY - h - m);
+  t.style.transform = `translate(${x}px, ${y}px)`;
+}
+function hideTip() { clearTimeout(tipTimer); tipFor = null; const t = $('#tip'); if (t) t.hidden = true; }
+document.addEventListener('mouseover', (e) => {
+  const el = e.target.closest?.('[data-tt]');
+  if (el === tipFor) return;
+  hideTip();
+  if (!el) return;
+  tipFor = el;
+  tipTimer = setTimeout(() => {
+    if (tipFor !== el || !el.isConnected) return;
+    const [kind, id] = el.dataset.tt.split(':');
+    const html = tipHtml(kind, Number(id));
+    if (!html) return;
+    const t = $('#tip');
+    t.innerHTML = html;
+    t.hidden = false;
+    placeTip();
+  }, 250);
+});
+document.addEventListener('mousemove', (e) => { tipX = e.clientX; tipY = e.clientY; if (tipFor && !$('#tip').hidden) placeTip(); }, { passive: true });
+document.documentElement.addEventListener('mouseleave', hideTip);
+document.addEventListener('scroll', hideTip, true);
+document.addEventListener('mousedown', hideTip);
 
 let toastTimer;
 function toast(msg) {
@@ -232,7 +298,7 @@ function renderStatus() {
 function renderPage() {
   const main = $('#main');
   const html = S.page === 'profile' ? renderProfilePage() : S.page === 'live' ? renderLive() : S.page === 'tier' ? renderTier() : S.page === 'champs' ? renderChamps() : renderSettings();
-  if (main._last !== html) { main.innerHTML = html; main._last = html; }
+  if (main._last !== html) { main.innerHTML = html; main._last = html; if (tipFor && !tipFor.isConnected) hideTip(); }
   if (S.page === 'champs') { const q = $('#q'); if (q && document.activeElement !== q && S.focusSearch) { q.focus(); S.focusSearch = false; } }
 }
 
@@ -311,7 +377,7 @@ function renderProfile(p, c) {
       <div class="mk tnum"><b>${m.kills}/${m.deaths}/${m.assists}</b><div class="small muted">${kdaRatio(m.kills, m.deaths, m.assists)} KDA</div></div>
       <div class="mk tnum small">${arena ? '' : `${m.cs} CS<br>`}<span class="coin"></span>${num(m.gold)}</div>
       <div class="items">${m.items.map((id) => itemImg(id, 'i20')).join('')}</div>
-      <div class="maug">${m.augments.map((id) => S.augments[id]?.icon ? `<img src="${S.augments[id].icon}" alt="" title="${esc(S.augments[id].name)}">` : '').join('')}</div>
+      <div class="maug">${m.augments.map((id) => S.augments[id]?.icon ? `<img src="${S.augments[id].icon}" alt="" data-tt="a:${id}">` : '').join('')}</div>
     </div>`;
   }).join('');
 
@@ -350,7 +416,7 @@ function slotHtml(s, opp, enemy) {
   const cls = [s.isMe ? 'me' : '', opp ? 'opp' : '', !s.locked && s.championId ? 'hover' : '', s.championId ? 'click' : ''].join(' ');
   const noLanes = S.state?.mode && S.state.mode !== 'classic';
   const pos = s.position ? `${POS_SHORT[s.position]}${s.positionConfidence != null ? `<br><span class="muted">${Math.round(s.positionConfidence * 100)}%</span>` : ''}` : '?';
-  const click = s.championId ? ` data-act="champ" data-c="${s.championId}" data-p="${s.position ?? ''}" title="Ver runas e build"` : '';
+  const click = s.championId ? ` data-act="champ" data-c="${s.championId}" data-p="${s.position ?? ''}"` : '';
   return `<div class="slot ${cls}"${click}${partyAttr(s.party, enemy)}>
     ${noLanes ? '' : `<div class="pos">${pos}</div>`}
     ${s.championId ? champImg(s.championId) : '<div class="ph"></div>'}
@@ -367,7 +433,7 @@ function sugRow(s, i, opts) {
     : col(pct(s.winRate), 'vitórias', wrCls(s.winRate))
       + (opts.oppName ? col(s.matchupWinRate != null ? pct(s.matchupWinRate) : '—', 'vs ' + esc(opts.oppName), s.matchupWinRate != null ? wrCls(s.matchupWinRate) : 'muted') : '')
       + col(pct(s.pickRate), 'escolha');
-  return `<div class="sug2 ${opts.preview === s.championId ? 'sel' : ''} ${s.source === 'seu' ? 'mine' : ''}" data-act="preview" data-c="${s.championId}" title="Ver a build ao lado">
+  return `<div class="sug2 ${opts.preview === s.championId ? 'sel' : ''} ${s.source === 'seu' ? 'mine' : ''}" data-act="preview" data-c="${s.championId}">
     <span class="n">${i + 1}</span>${champImg(s.championId)}
     <div class="grow"><div class="l1"><b>${esc(cname(s.championId))}</b> ${tierBadge(s.tier)}
       ${s.source === 'seu' ? '<span class="tag me">seu</span>' : s.source === 'banco' ? '<span class="tag">banco</span>' : ''}${!s.owned && !opts.random ? '<span class="tag">não tem</span>' : ''}</div>
@@ -496,7 +562,7 @@ function prismaticHtml(b, owned = [], n = 6, compact = false) {
   return `<h3>Prismáticos recomendados</h3><div class="prisms ${compact ? 'one' : ''}">${best.map((x, i) => {
     const it = S.items[x.ids[0]];
     const have = owned.includes(x.ids[0]);
-    return `<div class="prism ${have ? 'have' : ''}" title="${esc(it.plaintext || it.name)}">
+    return `<div class="prism ${have ? 'have' : ''}" data-tt="i:${x.ids[0]}">
       <div class="item ${have ? 'comprado' : ''}">${itemImg(x.ids[0], 'i28')}</div>
       <div class="grow"><div class="an">${i + 1}. ${esc(it.name)}${have ? ' <span class="tag me">tem</span>' : ''}</div>
       <div class="small muted">${x.avgPlace ? `pos. ${x.avgPlace.toFixed(1).replace('.', ',')} · ` : ''}<span class="${wrCls(x.winRate)}">${pct(x.winRate, 0)}</span> top 4 · ${pct(x.pickRate, 0)}</div></div></div>`;
@@ -512,7 +578,7 @@ function augmentsHtml(b, perGroup = 5, layout = '') {
       .map((a) => ({ ...a, adj: (a.winRate * a.play + mean * 150) / (a.play + 150) })).sort((x, y) => y.adj - x.adj).slice(0, perGroup);
     return `<div class="aug-col"><div class="aug-title ${cls}">${name}</div>${best.map((a) => {
       const info = S.augments[a.id];
-      return `<div class="aug" title="${esc(info?.name)}">${info?.icon ? `<img src="${info.icon}" alt="" loading="lazy">` : '<span class="ph2"></span>'}
+      return `<div class="aug" data-tt="a:${a.id}">${info?.icon ? `<img src="${info.icon}" alt="" loading="lazy">` : '<span class="ph2"></span>'}
         <div class="grow"><div class="an">${esc(info?.name ?? '#' + a.id)}</div>
         <div class="small muted">${a.avgPlace ? `pos. ${a.avgPlace.toFixed(1).replace('.', ',')} · ` : ''}<span class="${wrCls(a.winRate)}">${pct(a.winRate, 0)}</span> · ${pct(a.pickRate, 0)}</div></div></div>`;
     }).join('') || '<div class="muted small">Sem dados</div>'}</div>`;
@@ -595,9 +661,9 @@ function renderBuild(b, opts = {}) {
   <div class="cols2" style="margin-top:6px">
     <div><h3>Itens principais</h3>${sets(b.core, 3)}
       <h3>Opções para os últimos itens</h3>
-      <div class="items">${b.late.filter((l) => !b.core[0]?.ids.includes(l.ids[0]) && !(S.items[l.ids[0]]?.into?.length)).slice(0, 8).map((l) => `<div title="${pct(l.pickRate)} escolha">${itemImg(l.ids[0])}</div>`).join('')}</div></div>
+      <div class="items">${b.late.filter((l) => !b.core[0]?.ids.includes(l.ids[0]) && !(S.items[l.ids[0]]?.into?.length)).slice(0, 8).map((l) => `<div>${itemImg(l.ids[0])}</div>`).join('')}</div></div>
     <div>${b.starters.length ? `<h3>Itens iniciais</h3>${sets(b.starters, 2)}` : ''}
-      <h3>Botas</h3><div class="items">${b.boots.slice(0, 3).map((x) => `<div title="${pct(x.winRate)} vitórias · ${pct(x.pickRate)} escolha">${itemImg(x.ids[0])}</div>`).join('')}</div>
+      <h3>Botas</h3><div class="items">${b.boots.slice(0, 3).map((x) => `<div>${itemImg(x.ids[0])}</div>`).join('')}</div>
       ${b.spells.length ? `<h3>Feitiços</h3><div class="items">${b.spells.slice(0, 2).map((x) => `<div class="row" style="gap:4px">${x.ids.map((id) => spellImg(id, '')).join('')}<span class="small muted" style="margin:0 10px 0 4px">${pct(x.pickRate, 0)}</span></div>`).join('')}</div>` : ''}</div>
   </div>
   ${b.synergies?.length ? `<h3>Melhores parceiros</h3><div class="counters">${b.synergies.filter((x) => x.play >= 60)
@@ -681,7 +747,7 @@ function playerSide(p, side, enemy) {
   const click = `data-act="champ" data-c="${p.championId}" data-p="${p.position ?? ''}"`;
   const arena = S.state?.game?.mode === 'arena';
   return `<div class="pl ${side}"${partyAttr(p.party, enemy)}>
-    <div class="av click ${p.isDead ? 'dead' : ''}" ${click} title="Ver runas e build">${champImg(p.championId, 'c34')}<span class="lv">${p.level}</span>${p.isDead ? `<span class="rsp">${Math.ceil(p.respawn)}</span>` : ''}</div>
+    <div class="av click ${p.isDead ? 'dead' : ''}" ${click}>${champImg(p.championId, 'c34')}<span class="lv">${p.level}</span>${p.isDead ? `<span class="rsp">${Math.ceil(p.respawn)}</span>` : ''}</div>
     <div class="who grow">
       <div class="nm"><span class="click" ${click}>${esc(cname(p.championId))}</span>${p.isMe ? '<span class="tag me">você</span>' : ''}${partyTag(p.party, enemy)}</div>
       <div class="sm2">${esc(p.riotId.split('#')[0])}${p.rank ? ' · ' + rankText(p.rank, true) : ''}</div>

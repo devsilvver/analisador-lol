@@ -493,3 +493,20 @@ h3 { margin: 10px 0 6px; font-size: 12px; }
   .slot .pos { width: 30px; }
 }
 .build-card .bc-row { flex-wrap: wrap; row-gap: 4px; }
+
+/* ---------- dica ao parar o mouse ---------- */
+.tip { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; max-width: 340px; background: #0b1018; border: 1px solid var(--line2);
+  border-radius: 10px; padding: 9px 11px; box-shadow: 0 10px 30px #000a; font-size: 12px; line-height: 1.45; color: var(--text2); }
+.tip[hidden] { display: none; }
+.tt-h { display: flex; gap: 9px; align-items: center; }
+.tt-h img { width: 34px; height: 34px; border-radius: 7px; flex: none; }
+.tt-h b { color: var(--text); font-size: 13px; }
+.tt-sub { font-size: 11.5px; color: var(--muted); }
+.tt-sub.r-prism { color: #e9a8ff; } .tt-sub.r-gold { color: var(--gold); } .tt-sub.r-silver { color: #c9d3e0; }
+.tt-d { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--line); }
+.tt-d .t-stats { color: var(--text); }
+.tt-d .t-key { color: var(--gold2); }
+.tt-d b { color: var(--text); }
+.t-mag { color: var(--magic); } .t-phys { color: var(--phys); } .t-true { color: var(--truedmg); }
+.t-heal { color: var(--good); } .t-spd { color: #7fc0ff; } .t-mana { color: #5aa9ff; } .t-kw { color: #f3cf86; }
+.t-rules { color: var(--muted); }

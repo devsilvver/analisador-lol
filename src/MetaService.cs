@@ -104,7 +104,8 @@ public sealed partial class MetaService : IDisposable
                 gold["purchasable"]?.GetValue<bool>() == true && it["inStore"]?.GetValue<bool>() != false,
                 it["maps"]?["11"]?.GetValue<bool>() == true,
                 Ids("from"), Ids("into"), it["depth"]?.GetValue<int>() ?? 1,
-                it["maps"] is JsonObject maps ? maps.Where(m => m.Value?.GetValue<bool>() == true).Select(m => int.Parse(m.Key)).ToArray() : []);
+                it["maps"] is JsonObject maps ? maps.Where(m => m.Value?.GetValue<bool>() == true).Select(m => int.Parse(m.Key)).ToArray() : [],
+                RichText(it["description"]?.GetValue<string>() ?? ""));
         }
 
         foreach (var tree in runes.Result.AsArray())
@@ -116,14 +117,15 @@ public sealed partial class MetaService : IDisposable
                 {
                     var id = r!["id"]!.GetValue<int>();
                     Runes[id] = new RuneInfo(id, r["name"]!.GetValue<string>(), $"{DDragon}/cdn/img/{r["icon"]!.GetValue<string>()}",
-                        StripHtml(r["shortDesc"]?.GetValue<string>() ?? ""), treeId);
+                        RichText(r["shortDesc"]?.GetValue<string>() ?? ""), treeId);
                 }
         }
 
         foreach (var (key, s) in spells.Result["data"]!.AsObject())
         {
             var id = int.Parse(s!["key"]!.GetValue<string>());
-            Spells[id] = new SpellInfo(id, key, s["name"]!.GetValue<string>(), $"{DDragon}/cdn/{version}/img/spell/{s["image"]!["full"]!.GetValue<string>()}");
+            Spells[id] = new SpellInfo(id, key, s["name"]!.GetValue<string>(), $"{DDragon}/cdn/{version}/img/spell/{s["image"]!["full"]!.GetValue<string>()}",
+                RichText(s["description"]?.GetValue<string>() ?? ""), s["cooldownBurn"]?.GetValue<string>() ?? "");
             SpellByKey[key] = id;
         }
 
@@ -144,6 +146,7 @@ public sealed partial class MetaService : IDisposable
                 var txt = await web.GetStringAsync($"{CDragon}/pt_br/v1/cherry-augments.json");
                 await File.WriteAllTextAsync(path, txt);
             }
+            var descs = await LoadAugmentDescsAsync(version);
             foreach (var a in JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsArray())
             {
                 var id = a?["id"]?.GetValue<int>() ?? 0;
@@ -153,14 +156,95 @@ public sealed partial class MetaService : IDisposable
                 var url = icon.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
                     ? $"{CDragon}/default/{icon[prefix.Length..].ToLowerInvariant()}" : "";
                 var rarity = a!["rarity"]?.GetValue<string>() switch { "kGold" => "ouro", "kPrismatic" => "prismatico", "kSilver" => "prata", _ => "evento" };
-                Augments[id] = new AugmentInfo(id, a["nameTRA"]?.GetValue<string>() ?? $"#{id}", url, rarity);
+                Augments[id] = new AugmentInfo(id, a["nameTRA"]?.GetValue<string>() ?? $"#{id}", url, rarity, descs.GetValueOrDefault(id, ""));
             }
         }
         catch (Exception ex) { Log.Write("Aprimoramentos indisponíveis: " + ex.Message); }
     }
 
-    [GeneratedRegex("<[^>]+>")] private static partial Regex HtmlTag();
-    static string StripHtml(string s) => WebUtility.HtmlDecode(HtmlTag().Replace(s, ""));
+    /// <summary>
+    /// Descrições dos aprimoramentos da Arena (CommunityDragon, pt-BR), com os números já preenchidos.
+    /// Os do ARAM com aprimoramentos não têm descrição pública: ficam só com o nome.
+    /// </summary>
+    async Task<Dictionary<int, string>> LoadAugmentDescsAsync(string version)
+    {
+        var result = new Dictionary<int, string>();
+        var path = Path.Combine(Paths.Cache, "ddragon", version, "arena-ptbr.json");
+        try
+        {
+            if (!File.Exists(path))
+                await File.WriteAllTextAsync(path, await web.GetStringAsync("https://raw.communitydragon.org/latest/cdragon/arena/pt_br.json"));
+            foreach (var a in JsonNode.Parse(await File.ReadAllTextAsync(path))!["augments"]!.AsArray())
+            {
+                var id = a?["id"]?.GetValue<int>() ?? 0;
+                var desc = a?["desc"]?.GetValue<string>() ?? a?["tooltip"]?.GetValue<string>() ?? "";
+                if (id == 0 || desc.Length == 0) continue;
+                var values = a!["dataValues"] as JsonObject;
+                string Var(string name, double mult)
+                {
+                    var v = values?.FirstOrDefault(kv => kv.Key.Equals(name, StringComparison.OrdinalIgnoreCase)).Value;
+                    var n = v is JsonArray arr && arr.Count > 0 ? arr[0]!.GetValue<double>() : v is JsonValue jv ? jv.GetValue<double>() : double.NaN;
+                    return double.IsNaN(n) ? "?" : Math.Round(n * mult, 2).ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+                }
+                desc = AugVar().Replace(desc, m => Var(m.Groups[1].Value, m.Groups[2].Success ? double.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture) : 1));
+                // Marcadores de palavra-chave do jogo ({{ Item_Keyword_OnHit }}) viram texto
+                desc = AugKeyword().Replace(desc, m => m.Groups[1].Value.Split('_')[^1] switch
+                {
+                    "OnHit" => "Ao Acertar", "Lethality" => "Letalidade", "Omnivamp" => "Onivampirismo", "Lifesteal" => "Roubo de Vida",
+                    "Tenacity" => "Tenacidade", "Haste" => "Aceleração", _ => "",
+                });
+                result[id] = RichText(desc);
+            }
+        }
+        catch (Exception ex) { Log.Write("Descrições dos aprimoramentos indisponíveis: " + ex.Message); }
+        return result;
+    }
+
+    [GeneratedRegex(@"@([\w.]+)(?:\*([\d.]+))?@")] private static partial Regex AugVar();
+    [GeneratedRegex(@"<(/?)([a-zA-Z]+)[^>]*>")] private static partial Regex RiotTag();
+    [GeneratedRegex(@"\{\{\s*([\w]+)\s*\}\}")] private static partial Regex AugKeyword();
+    [GeneratedRegex(@"(<br>\s*){3,}")] private static partial Regex ManyBreaks();
+
+    /// <summary>
+    /// Converte o texto com marcações da Riot (&lt;stats&gt;, &lt;passive&gt;, &lt;magicDamage&gt;…) em HTML simples e seguro:
+    /// o texto é sempre escapado e só saem &lt;br&gt;, &lt;b&gt;, &lt;i&gt; e &lt;span class="t-…"&gt;.
+    /// </summary>
+    public static string RichText(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var sb = new System.Text.StringBuilder();
+        int last = 0;
+        foreach (Match m in RiotTag().Matches(raw))
+        {
+            sb.Append(WebUtility.HtmlEncode(WebUtility.HtmlDecode(raw[last..m.Index])));
+            last = m.Index + m.Length;
+            var close = m.Groups[1].Value == "/";
+            var (open, end) = m.Groups[2].Value.ToLowerInvariant() switch
+            {
+                "br" => ("<br>", ""),
+                "li" => ("<br>• ", ""),
+                "stats" => ("<span class=\"t-stats\">", "</span>"),
+                "passive" or "active" or "keywordmajor" or "spellname" or "jadeunique" or "unique" or "rarityprismatic" or "raritylegendary" => ("<b class=\"t-key\">", "</b>"),
+                "attention" => ("<b>", "</b>"),
+                "magicdamage" or "scaleap" => ("<span class=\"t-mag\">", "</span>"),
+                "physicaldamage" or "scalead" or "scalebonusad" => ("<span class=\"t-phys\">", "</span>"),
+                "truedamage" => ("<span class=\"t-true\">", "</span>"),
+                "healing" or "scalehealth" or "shield" or "lifesteal" or "omnivamp" => ("<span class=\"t-heal\">", "</span>"),
+                "speed" or "scalearmor" or "scalemr" => ("<span class=\"t-spd\">", "</span>"),
+                "scalemana" => ("<span class=\"t-mana\">", "</span>"),
+                "status" or "keyword" or "keywordstealth" => ("<span class=\"t-kw\">", "</span>"),
+                "rules" or "flavortext" => ("<i class=\"t-rules\">", "</i>"),
+                _ => ("", ""),
+            };
+            sb.Append(close ? end : open);
+        }
+        sb.Append(WebUtility.HtmlEncode(WebUtility.HtmlDecode(raw[last..])));
+        var html = sb.ToString().Trim();
+        while (html.StartsWith("<br>")) html = html[4..].TrimStart();
+        while (html.EndsWith("<br>")) html = html[..^4].TrimEnd();
+        return ManyBreaks().Replace(html, "<br><br>");
+    }
+
 
     // Itens de todos os mapas jogáveis (Summoner's Rift, ARAM, Nexus Blitz e os próprios da Arena)
     public StaticDto ToDto() => new(Version, Champions.Values.OrderBy(c => c.Name),

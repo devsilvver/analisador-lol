@@ -22,12 +22,13 @@ public static class Pos
 
 // ---------- Dados estáticos (Data Dragon) ----------
 public record ChampInfo(int Id, string Key, string Name, string Title, string[] Tags, int Attack, int Magic, int Defense, string Icon);
-public record ItemInfo(int Id, string Name, int Gold, string Icon, string[] Tags, string Plaintext, bool Purchasable, bool OnRift, int[] From, int[] Into, int Depth, int[] Maps);
+public record ItemInfo(int Id, string Name, int Gold, string Icon, string[] Tags, string Plaintext, bool Purchasable, bool OnRift, int[] From, int[] Into, int Depth, int[] Maps, string Desc = "");
 /// <summary>Aprimoramento (Arena e ARAM com aprimoramentos). Rarity: prata, ouro, prismatico.</summary>
-public record AugmentInfo(int Id, string Name, string Icon, string Rarity);
+/// <summary>Desc: descrição em HTML simples (só marcações seguras, ver MetaService.RichText).</summary>
+public record AugmentInfo(int Id, string Name, string Icon, string Rarity, string Desc = "");
 public record RuneInfo(int Id, string Name, string Icon, string Desc, int TreeId);
 public record RuneTree(int Id, string Name, string Icon);
-public record SpellInfo(int Id, string Key, string Name, string Icon);
+public record SpellInfo(int Id, string Key, string Name, string Icon, string Desc = "", string Cooldown = "");
 
 public record StaticDto(string Version, IEnumerable<ChampInfo> Champions, IEnumerable<ItemInfo> Items,
     IEnumerable<RuneInfo> Runes, IEnumerable<RuneTree> Trees, IEnumerable<SpellInfo> Spells, IEnumerable<AugmentInfo> Augments);
