@@ -149,6 +149,8 @@ public class Suggestion
     public List<string> Reasons { get; set; } = [];
 }
 
+public record OpponentCandidate(int CellId, int ChampionId, double Chance);
+
 public class ChampSelectView
 {
     public string? MyPosition { get; set; }
@@ -165,6 +167,10 @@ public class ChampSelectView
     public List<Slot> Enemies { get; set; } = [];
     public List<int> Bans { get; set; } = [];
     public Slot? LaneOpponent { get; set; }
+    /// <summary>Chance de cada inimigo estar na sua rota (o cliente não informa as rotas inimigas na ranqueada).</summary>
+    public List<OpponentCandidate> OpponentCandidates { get; set; } = [];
+    /// <summary>O oponente foi escolhido por você (não deduzido).</summary>
+    public bool OpponentManual { get; set; }
     public List<Suggestion> Suggestions { get; set; } = [];
     public List<Suggestion> BanSuggestions { get; set; } = [];
     public List<Matchup> LaneCounters { get; set; } = [];

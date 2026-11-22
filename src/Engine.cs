@@ -157,6 +157,9 @@ public sealed class Engine : IDisposable
     }
 
     public void SetManualPosition(string? pos) { manualPosition = Pos.From(pos); Wake(); }
+    int? manualOpponentCell;
+    /// <summary>Você marca qual inimigo é o seu oponente de rota (null volta a deduzir).</summary>
+    public void SetManualOpponent(int? cellId) { manualOpponentCell = cellId; Wake(); }
 
     async Task Loop()
     {
@@ -179,7 +182,7 @@ public sealed class Engine : IDisposable
             var dm = Demo.ModeOf(DemoMode);
             state.Mode = dm; state.ModeName = Mode.Name(dm);
             state.Client = new ClientInfo { Connected = true, Phase = "ChampSelect", Summoner = "Demonstração" };
-            state.ChampSelect = await analyzer.ChampSelectAsync(new ChampSelectInput { Session = Demo.Session(dm), Mastery = Demo.Mastery, ManualPosition = manualPosition, Mode = dm });
+            state.ChampSelect = await analyzer.ChampSelectAsync(new ChampSelectInput { Session = Demo.Session(dm), Mastery = Demo.Mastery, ManualPosition = manualPosition, ManualOpponentCell = manualOpponentCell, Mode = dm });
             ApplyParties(state.ChampSelect.Allies, Demo.Parties(state.ChampSelect.Allies));
             Publish(state);
             return 3000;
@@ -218,7 +221,7 @@ public sealed class Engine : IDisposable
         if (phase != lastPhase)
         {
             profileAt = DateTime.MinValue; // fim de partida etc.: perfil e histórico atualizados
-            if (phase == "ChampSelect") { manualPosition = null; autoRunesKey = autoSetKey = autoSpellsKey = ""; spellTries = 0; knownPositions = []; ResetParties(); arenaOrder = []; arenaOrderGame = 0; }
+            if (phase == "ChampSelect") { manualPosition = null; manualOpponentCell = null; autoRunesKey = autoSetKey = autoSpellsKey = ""; spellTries = 0; knownPositions = []; ResetParties(); arenaOrder = []; arenaOrderGame = 0; }
             if (phase is "ChampSelect" or "GameStart" or "InProgress" or "Reconnect") await RefreshMode();
             else if (phase is "None" or "Lobby" or "Desconectado") currentMode = Mode.Classic;
             else lastEnemies = [];
@@ -239,7 +242,7 @@ public sealed class Engine : IDisposable
 
                 var view = await analyzer.ChampSelectAsync(new ChampSelectInput
                 {
-                    Session = session, Owned = owned, Mastery = mastery, ManualPosition = manualPosition, Mode = currentMode,
+                    Session = session, Owned = owned, Mastery = mastery, ManualPosition = manualPosition, ManualOpponentCell = manualOpponentCell, Mode = currentMode,
                     RanksByPuuid = ranks.Where(r => r.Value != null).ToDictionary(r => r.Key, r => r.Value!),
                 });
                 await RefreshParties(view.Allies.Where(a => a.Puuid != null).Select(a => a.Puuid!).ToHashSet(), null);

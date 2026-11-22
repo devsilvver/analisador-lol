@@ -512,6 +512,30 @@ function renderModeSelect(cs) {
   </div></div>`;
 }
 
+/**
+ * Oponente de rota. Na ranqueada o cliente não diz a rota dos inimigos: o app mostra a chance de cada um
+ * estar na sua rota e você confirma com um clique (as sugestões passam a usar só ele).
+ */
+function oppCard(cs, opp, oppName) {
+  const picked = cs.enemies.filter((e) => e.championId);
+  if (!opp && !picked.length) return '';
+  const cands = cs.opponentCandidates ?? [];
+  const chance = (cell) => cands.find((c) => c.cellId === cell)?.chance;
+  const top = cands[0]?.chance ?? 1;
+  const sure = cs.opponentManual || top >= 0.95;
+  const label = cs.opponentManual ? 'Oponente de rota <span class="good">· você escolheu</span>'
+    : sure ? 'Oponente de rota' : `Oponente provável <span class="warn">· ${pct(top, 0)}</span>`;
+  const others = picked.filter((e) => e.cellId !== opp?.cellId).map((e) => {
+    const c = chance(e.cellId);
+    return `<button class="opp-alt" data-act="opp" data-v="${e.cellId}" title="Marcar ${esc(cname(e.championId))} como meu oponente de rota">${champImg(e.championId, 'c22')}${c != null && !sure ? `<span>${pct(c, 0)}</span>` : ''}</button>`;
+  }).join('');
+  return `<div class="opp-card ${sure ? '' : 'unsure'}">${opp ? champImg(opp.championId, 'c34') : ''}<div>
+      <div class="small muted">${opp ? label : 'Quem é o seu oponente?'}</div>
+      ${opp ? `<b>${esc(oppName)}</b>${cs.myMatchup ? ` <span class="${cs.myMatchup.winRate >= 0.5 ? 'good' : 'bad'}">· você ${pct(cs.myMatchup.winRate)}</span>` : ''}` : ''}</div>
+    ${others ? `<div class="opp-alts"><span class="small muted">${sure ? 'Trocar' : 'É outro?'}</span>${others}${cs.opponentManual ? '<button class="opp-alt txt" data-act="opp" data-v="-1" title="Voltar a deduzir pelo meta">auto</button>' : ''}</div>` : ''}
+  </div>`;
+}
+
 function renderChampSelect(cs) {
   if (cs.mode && cs.mode !== 'classic') return renderModeSelect(cs);
   const opp = cs.laneOpponent;
@@ -529,8 +553,7 @@ function renderChampSelect(cs) {
   return `<div class="fit">
   ${csHead(cs, {
     sub: `<div class="sub">Sua rota (${esc(cs.positionSource)}): <span class="seg sm">${posButtons}</span></div>`,
-    right: opp ? `<div class="opp-card">${champImg(opp.championId, 'c34')}<div><div class="small muted">Oponente de rota${opp.positionConfidence != null ? ` · ${Math.round(opp.positionConfidence * 100)}%` : ''}</div>
-      <b>${esc(oppName)}</b>${cs.myMatchup ? ` <span class="${cs.myMatchup.winRate >= 0.5 ? 'good' : 'bad'}">· você ${pct(cs.myMatchup.winRate)}</span>` : ''}</div></div>` : '',
+    right: oppCard(cs, opp, oppName),
   })}
   ${cs.notice ? `<div class="banner slim">${esc(cs.notice)}</div>` : ''}
   ${groups ? `<div class="groups slim">${groups}</div>` : ''}
@@ -1027,6 +1050,7 @@ document.addEventListener('click', async (e) => {
   const c = Number(el.dataset.c), p = el.dataset.p;
   switch (act) {
     case 'pos': await call('setPosition', { position: v }); break;
+    case 'opp': await call('setOpponent', { cellId: Number(v) }); break;
     case 'champ': openChamp(c, p, el.dataset.m); break;
     case 'preview': S.csPrev = c ? { c, mine: S.state?.champSelect?.myChampionId ?? 0 } : null; renderPage(); break;
     case 'bench': toast(await call('benchSwap', { championId: c })); break;

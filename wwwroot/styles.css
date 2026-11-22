@@ -510,3 +510,11 @@ h3 { margin: 10px 0 6px; font-size: 12px; }
 .t-mag { color: var(--magic); } .t-phys { color: var(--phys); } .t-true { color: var(--truedmg); }
 .t-heal { color: var(--good); } .t-spd { color: #7fc0ff; } .t-mana { color: #5aa9ff; } .t-kw { color: #f3cf86; }
 .t-rules { color: var(--muted); }
+
+/* oponente de rota: chance e troca com um clique */
+.opp-card.unsure { border-style: dashed; }
+.opp-alts { display: flex; gap: 4px; align-items: center; margin-left: 6px; padding-left: 8px; border-left: 1px solid #5a2430; }
+.opp-alt { display: inline-flex; flex-direction: column; align-items: center; gap: 0; background: none; border: 1px solid transparent; border-radius: 6px; padding: 2px; color: var(--muted); font-size: 10px; line-height: 1.1; cursor: pointer; }
+.opp-alt:hover { border-color: var(--line2); background: var(--panel2); color: var(--text); }
+.opp-alt.txt { padding: 4px 6px; font-size: 11px; }
+.ci.c22 { width: 22px; height: 22px; border-radius: 5px; }

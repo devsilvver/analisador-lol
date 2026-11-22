@@ -10,6 +10,8 @@ public sealed class ChampSelectInput
     public HashSet<int>? Owned { get; init; }
     public Dictionary<int, int> Mastery { get; init; } = [];
     public string? ManualPosition { get; init; }
+    /// <summary>Inimigo que você marcou como oponente de rota (cellId), ou nulo para deduzir.</summary>
+    public int? ManualOpponentCell { get; init; }
     public Dictionary<string, RankInfo> RanksByPuuid { get; init; } = [];
 }
 
@@ -92,6 +94,41 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
             result[list[i]] = (bestAssign[i], rs > 0 ? Math.Min(1, Rate(list[i], bestAssign[i]) / rs) : 0);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Chance de cada campeão estar em cada rota livre, somando todas as distribuições possíveis
+    /// (peso = produto das taxas de rota do meta). Usada para o oponente de rota quando o cliente não informa.
+    /// </summary>
+    static Dictionary<int, Dictionary<string, double>> RoleChances(IList<int> champs, Dictionary<int, Dictionary<string, double>> rates, ICollection<string> taken)
+    {
+        var free = Pos.All.Where(p => !taken.Contains(p)).ToList();
+        var list = champs.Where(c => c > 0).Distinct().Take(free.Count).ToList();
+        var acc = list.ToDictionary(c => c, _ => new Dictionary<string, double>());
+        if (list.Count == 0) return acc;
+        double Rate(int champ, string pos) => (rates.TryGetValue(champ, out var m) && m.TryGetValue(pos, out var r) ? r : 0.0005) + 0.001;
+        double total = 0;
+        var cur = new string[list.Count];
+        var used = new bool[free.Count];
+        void Search(int i, double w)
+        {
+            if (i == list.Count)
+            {
+                total += w;
+                for (int k = 0; k < list.Count; k++) acc[list[k]][cur[k]] = acc[list[k]].GetValueOrDefault(cur[k]) + w;
+                return;
+            }
+            for (int j = 0; j < free.Count; j++)
+            {
+                if (used[j]) continue;
+                used[j] = true; cur[i] = free[j];
+                Search(i + 1, w * Rate(list[i], free[j]));
+                used[j] = false;
+            }
+        }
+        Search(0, 1);
+        if (total > 0) foreach (var d in acc.Values) foreach (var k in d.Keys.ToList()) d[k] /= total;
+        return acc;
     }
 
     static string DamageType(ChampInfo c) => c.Magic > c.Attack ? "AP" : "AD";
@@ -183,12 +220,48 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
         else if (mySlot?.Position != null) { view.MyPosition = mySlot.Position; view.PositionSource = "deduzida"; }
         var pos = view.MyPosition;
 
-        view.LaneOpponent = pos == null ? null : view.Enemies.FirstOrDefault(e => e.ChampionId > 0 && e.Position == pos);
+        // Oponente de rota. Rota informada pelo cliente: certeza. Senão, a chance de cada inimigo estar na sua rota
+        // (somando todas as distribuições possíveis); você pode marcar o oponente certo com um clique.
+        var picked = view.Enemies.Where(e => e.ChampionId > 0).ToList();
+        if (pos != null && picked.Count > 0)
+        {
+            var manual = input.ManualOpponentCell is int mc ? picked.FirstOrDefault(e => e.CellId == mc) : null;
+            if (manual != null)
+            {
+                view.OpponentCandidates = [new OpponentCandidate(manual.CellId, manual.ChampionId, 1)];
+                view.OpponentManual = true;
+            }
+            else if (picked.FirstOrDefault(e => e.Position == pos && e.PositionConfidence == null) is { } told)
+                view.OpponentCandidates = [new OpponentCandidate(told.CellId, told.ChampionId, 1)];
+            else
+            {
+                var knownTaken = picked.Where(e => e.PositionConfidence == null && e.Position != null).Select(e => e.Position!).ToList();
+                var chances = RoleChances(picked.Where(e => e.PositionConfidence != null || e.Position == null).Select(e => e.ChampionId).ToList(), rates, knownTaken);
+                view.OpponentCandidates = picked.Where(e => chances.ContainsKey(e.ChampionId))
+                    .Select(e => new OpponentCandidate(e.CellId, e.ChampionId, Math.Round(chances[e.ChampionId].GetValueOrDefault(pos), 3)))
+                    .Where(c => c.Chance >= 0.05).OrderByDescending(c => c.Chance).ToList();
+            }
+            var top = view.OpponentCandidates.FirstOrDefault();
+            if (top != null)
+            {
+                view.LaneOpponent = picked.First(e => e.CellId == top.CellId);
+                // O cartão mostra a chance de ele estar na SUA rota
+                if (!view.OpponentManual && top.Chance < 1) view.LaneOpponent.PositionConfidence = top.Chance;
+                // A lista dos inimigos mostra o oponente na sua rota (e tira dela quem só tinha sido deduzido ali)
+                foreach (var e in picked.Where(e => e != view.LaneOpponent && e.Position == pos && e.PositionConfidence != null)) { e.Position = null; e.PositionConfidence = null; }
+                view.LaneOpponent.Position = pos;
+                if (view.OpponentManual) view.LaneOpponent.PositionConfidence = null;
+            }
+        }
         var oppId = view.LaneOpponent?.ChampionId ?? 0;
 
-        var oppBuildTask = oppId > 0 && pos != null ? meta.GetBuildAsync(oppId, pos, s.Region, s.Tier) : Task.FromResult<ChampionBuild?>(null);
+        // Builds (com os confrontos) dos candidatos relevantes a oponente
+        var candBuilds = new List<(OpponentCandidate c, ChampionBuild b)>();
+        var candTasks = view.OpponentCandidates.Where(c => c.Chance >= 0.15).Take(3)
+            .Select(async c => (c, b: await meta.GetBuildAsync(c.ChampionId, pos!, s.Region, s.Tier))).ToList();
         var myBuildTask = view.MyChampionId > 0 && pos != null ? meta.GetBuildAsync(view.MyChampionId, pos, s.Region, s.Tier) : Task.FromResult<ChampionBuild?>(null);
-        var oppBuild = await oppBuildTask;
+        foreach (var t in candTasks) { var (c, b) = await t; if (b != null) candBuilds.Add((c, b)); }
+        var oppBuild = candBuilds.FirstOrDefault(x => x.c.ChampionId == oppId).b;
         var myBuild = await myBuildTask;
         view.MyBuild = myBuild;
 
@@ -215,7 +288,7 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
 
         if (pos != null)
         {
-            view.Suggestions = Suggest(tier, pos, view, unavailable, oppBuild, input);
+            view.Suggestions = Suggest(tier, pos, view, unavailable, candBuilds, input);
             view.BanSuggestions = SuggestBans(tier, pos, view, myBuild, input);
         }
         else view.Notice = "Escolha sua rota para ver as sugestões.";
@@ -334,11 +407,15 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
         return view;
     }
 
-    List<Suggestion> Suggest(List<TierEntry> tier, string pos, ChampSelectView view, HashSet<int> unavailable, ChampionBuild? oppBuild, ChampSelectInput input)
+    List<Suggestion> Suggest(List<TierEntry> tier, string pos, ChampSelectView view, HashSet<int> unavailable,
+        List<(OpponentCandidate c, ChampionBuild b)> candBuilds, ChampSelectInput input)
     {
         var s = settings();
         var oppId = view.LaneOpponent?.ChampionId ?? 0;
         var oppName = oppId > 0 ? Name(oppId) : "";
+        // Confrontos de cada candidato a oponente (campeão → resultado do ponto de vista do oponente)
+        var cands = candBuilds.Select(x => (x.c, map: x.b.Counters.GroupBy(m => m.ChampionId).ToDictionary(g => g.Key, g => g.First()))).ToList();
+        var sure = view.OpponentManual || view.OpponentCandidates.FirstOrDefault()?.Chance >= 0.95; // acima de 95%: trata como certo
 
         // Composição aliada (sem contar comigo)
         var allyChamps = view.Allies.Where(a => !a.IsMe && a.ChampionId > 0 && meta.Champions.ContainsKey(a.ChampionId))
@@ -361,14 +438,27 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
             var expected = wr;
             if (wr >= 0.515) sug.Reasons.Add($"Forte no meta: {Pct(e.WinRate)} de vitórias");
 
-            var m = oppBuild?.Counters.FirstOrDefault(c => c.ChampionId == e.ChampionId);
-            if (m != null && m.Play > 0)
+            // Oponente incerto: média dos confrontos pesada pela chance de cada candidato estar na sua rota
+            // (o resto da chance — rota ainda sem inimigo — fica com a taxa geral do campeão).
+            if (cands.Count > 0)
             {
-                expected = Smooth(1 - m.WinRate, m.Play, wr, 300);
-                sug.MatchupWinRate = 1 - m.WinRate;
-                sug.MatchupGames = m.Play;
-                if (expected >= 0.512) sug.Reasons.Add($"Vence {oppName}: {Pct(1 - m.WinRate)} em {Num(m.Play)} jogos");
-                else if (expected <= 0.488) sug.Reasons.Add($"Desvantagem contra {oppName} ({Pct(1 - m.WinRate)})");
+                double mix = 0, weight = 0;
+                foreach (var (c, map) in cands)
+                {
+                    var vs = map.TryGetValue(e.ChampionId, out var mc) && mc.Play > 0 ? Smooth(1 - mc.WinRate, mc.Play, wr, 300) : wr;
+                    mix += c.Chance * vs; weight += c.Chance;
+                    if (c.ChampionId != oppId || mc == null || mc.Play == 0) continue;
+                    sug.MatchupWinRate = 1 - mc.WinRate;
+                    sug.MatchupGames = mc.Play;
+                    var doubt = sure ? "" : $" · provável ({c.Chance * 100:0}%)";
+                    if (vs >= 0.512) sug.Reasons.Add($"Vence {oppName}: {Pct(1 - mc.WinRate)} em {Num(mc.Play)} jogos{doubt}");
+                    else if (vs <= 0.488) sug.Reasons.Add($"Desvantagem contra {oppName} ({Pct(1 - mc.WinRate)}){doubt}");
+                }
+                expected = mix + Math.Max(0, 1 - weight) * wr;
+                // Contra os outros candidatos: avisa quando o campeão sofre contra algum deles
+                foreach (var (c, map) in cands.Where(x => x.c.ChampionId != oppId && x.c.Chance >= 0.2))
+                    if (map.TryGetValue(e.ChampionId, out var mc2) && mc2.Play >= 100 && 1 - mc2.WinRate <= 0.47)
+                        sug.Reasons.Add($"Se o oponente for {Name(c.ChampionId)}: só {Pct(1 - mc2.WinRate)}");
             }
             double score = (expected - 0.5) * 100 + 0.5 * e.Tier switch { 1 => 1.5, 2 => 1, 3 => 0, 4 => -0.5, 5 => -1, _ => 0 };
 

@@ -226,6 +226,7 @@ public sealed class MainForm : Form
             case "benchSwap": return await engine.SwapBench(Int("championId"));
             case "modeList": return await meta.GetModeListAsync(Str("mode") ?? Mode.Aram, s.Region);
             case "setPosition": engine.SetManualPosition(Str("position")); return true;
+            case "setOpponent": { var cell = Int("cellId"); engine.SetManualOpponent(cell >= 0 ? cell : null); return true; }
             case "setSettings":
             {
                 var ns = p!["settings"].Deserialize<AppSettings>(Json.Opts) ?? s;
