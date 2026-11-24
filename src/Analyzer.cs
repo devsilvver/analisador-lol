@@ -527,10 +527,23 @@ public sealed class Analyzer(MetaService meta, Func<AppSettings> settings)
 
     int SpellFromLive(JsonNode? sp)
     {
+        // "GeneratedTip_SummonerSpell_SummonerFlash_DisplayName". Feitiços melhorados na partida vêm com outro nome:
+        // Golpear depois do item da selva ("S5_SummonerSmitePlayerGanker", "...SmiteAvatar...") e o Teleporte com
+        // 10 min ("S12_SummonerTeleportUpgrade"). Sem isso o feitiço sumia (Teleporte e Golpear invisíveis no painel).
         var raw = sp?["rawDisplayName"]?.GetValue<string>() ?? "";
-        var parts = raw.Split('_');
-        return parts.Length >= 3 && meta.SpellByKey.TryGetValue(parts[2], out var id) ? id : 0;
+        const string pre = "GeneratedTip_SummonerSpell_", suf = "_DisplayName";
+        var key = raw.StartsWith(pre) ? raw[pre.Length..] : raw;
+        if (key.EndsWith(suf)) key = key[..^suf.Length];
+        if (meta.SpellByKey.TryGetValue(key, out var id)) return id;
+        var bare = System.Text.RegularExpressions.Regex.Replace(key, @"^S\d+_", "");
+        if (meta.SpellByKey.TryGetValue(bare, out id)) return id;
+        // Variante: o nome começa com o do feitiço base (o mais longo que servir)
+        var best = meta.SpellByKey.Keys.Where(k => bare.StartsWith(k, StringComparison.OrdinalIgnoreCase)).OrderByDescending(k => k.Length).FirstOrDefault();
+        if (best != null) return meta.SpellByKey[best];
+        if (raw != "" && unknownSpells.Add(raw)) Log.Write("Feitiço da partida não reconhecido: " + raw);
+        return 0;
     }
+    static readonly HashSet<string> unknownSpells = [];
 
     public async Task<GameView> GameAsync(GameInput input)
     {

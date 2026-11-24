@@ -2,7 +2,7 @@
 ; Compilar: ISCC.exe AnalisadorLoL.iss  (gera Saida\AnalisadorLoL-Instalador-<versão>.exe)
 
 #define AppName "Analisador LoL"
-#define AppVersion "1.2.4"
+#define AppVersion "1.2.5"
 #define Author "Guilherme Silvestrini"
 #define AuthorUrl "https://github.com/devsilvver"
 #define AppExe "AnalisadorLoL.exe"
