@@ -42,7 +42,7 @@ public sealed class MainForm : Form
             Location = new Point(-5000, 0);
             ShowInTaskbar = false;
         }
-        else if (Program.StartHidden) WindowState = FormWindowState.Minimized;
+        if (Program.StartHidden) WindowState = FormWindowState.Minimized;
 
         engine = new Engine(meta, SettingsStore.Load());
         staticLoad = meta.LoadStaticAsync();
@@ -384,7 +384,8 @@ public sealed class MainForm : Form
     }
 
     // O X da janela só esconde: o app continua na bandeja, pronto para o atalho.
-    protected override bool ShowWithoutActivation => Program.Demo;
+    bool noActivate;
+    protected override bool ShowWithoutActivation => Program.Demo || noActivate;
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
@@ -415,7 +416,7 @@ public sealed class MainForm : Form
             while (true)
             {
                 ev.WaitOne(); // parado, sem gastar CPU, até alguém abrir o app de novo
-                BeginInvokeSafe(RestoreFromTray);
+                BeginInvokeSafe(Program.Demo ? ToggleOverlay : RestoreFromTray); // cópia de testes: o sinal faz o papel do Ctrl+X
             }
         }) { IsBackground = true, Name = "Pedido para abrir" }.Start();
     }
@@ -505,6 +506,10 @@ public sealed class MainForm : Form
             // Antes: Show() + restaurar + TopMost ativavam a janela em duas etapas (pisca, anima e tira o foco do jogo).
             overlayShown = true;
             ShowWindow(Handle, 4 /* SW_SHOWNOACTIVATE: restaura e mostra sem ativar */);
+            // O WinForms não percebe a janela mostrada direto pelo Windows e o navegador interno ficava desligado
+            // (tela preta). Avisa o WinForms também, sem ativar a janela.
+            noActivate = true;
+            try { Visible = true; } finally { noActivate = false; }
             SetWindowPos(Handle, new IntPtr(-1) /* HWND_TOPMOST */, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 /* NOSIZE | NOMOVE | NOACTIVATE */);
             OnResized(); // volta a tela (o navegador interno estava pausado)
         }
