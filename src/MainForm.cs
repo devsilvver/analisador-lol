@@ -307,12 +307,21 @@ public sealed class MainForm : Form
         catch { }
     }
 
-    bool IsShowing() => Visible && WindowState != FormWindowState.Minimized;
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int cmd);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    // Estado real da janela (o do WinForms pode ficar para trás quando ela é mostrada sem ativar)
+    bool IsShowing() => IsHandleCreated && IsWindowVisible(Handle) && !IsIconic(Handle);
+    bool Minimized => IsHandleCreated ? IsIconic(Handle) : WindowState == FormWindowState.Minimized;
+    bool InGame => gameWindow != IntPtr.Zero && IsWindow(gameWindow);
 
     async void OnResized()
     {
         if (web.CoreWebView2 == null) return;
-        if (WindowState == FormWindowState.Minimized && !suspended)
+        if (Minimized && !suspended)
         {
             suspended = true;
             engine.Visible = false;
@@ -327,9 +336,10 @@ public sealed class MainForm : Form
                 await web.CoreWebView2.TrySuspendAsync();
             }
             catch { }
-            TrimMemory();
+            // Na partida não devolve a memória: o Ctrl+X precisa reabrir na hora (devolver faz a volta demorar e travar)
+            if (!InGame) TrimMemory();
         }
-        else if (WindowState != FormWindowState.Minimized && suspended)
+        else if (!Minimized && suspended)
         {
             suspended = false;
             web.Visible = true;
@@ -349,7 +359,7 @@ public sealed class MainForm : Form
     {
         if (!overlayShown) TopMost = false;
         Show();
-        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        if (Minimized) ShowWindow(Handle, 9 /* SW_RESTORE */);
         Activate();
     }
 
@@ -357,7 +367,7 @@ public sealed class MainForm : Form
     {
         overlayShown = false;
         TopMost = false;
-        if (WindowState != FormWindowState.Minimized) WindowState = FormWindowState.Minimized;
+        if (!Minimized) ShowWindow(Handle, 6 /* SW_MINIMIZE */);
         Hide();
     }
 
@@ -473,6 +483,7 @@ public sealed class MainForm : Form
         var name = ProcessOf(fg);
         if (name == "League of Legends") gameWindow = fg;
         var active = name != null && LeagueProcesses.Contains(name);
+        if (Program.Demo) active = false; // a cópia de testes nunca pega o teclado de quem está jogando
         keyboard.Set(active, KeyboardWatcher.Parse(engine.Settings.OverlayHotkey));
     }
 
@@ -490,10 +501,12 @@ public sealed class MainForm : Form
         }
         else
         {
+            // Mostra por cima do jogo SEM ativar: o teclado continua no jogo (Ctrl+X de novo esconde).
+            // Antes: Show() + restaurar + TopMost ativavam a janela em duas etapas (pisca, anima e tira o foco do jogo).
             overlayShown = true;
-            Show();
-            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-            TopMost = true; // por cima do jogo (modos "Sem bordas" e "Janela")
+            ShowWindow(Handle, 4 /* SW_SHOWNOACTIVATE: restaura e mostra sem ativar */);
+            SetWindowPos(Handle, new IntPtr(-1) /* HWND_TOPMOST */, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 /* NOSIZE | NOMOVE | NOACTIVATE */);
+            OnResized(); // volta a tela (o navegador interno estava pausado)
         }
     }
 
